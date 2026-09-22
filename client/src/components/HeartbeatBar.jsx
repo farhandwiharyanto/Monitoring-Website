@@ -3,7 +3,7 @@ import { fmtTime } from "../lib/format.js";
 
 const color = { 0: "bg-down", 1: "bg-up", 2: "bg-pending" };
 
-// 20 heartbeat terakhir; slot kosong abu-abu; heartbeat saat maintenance berwarna indigo
+// N heartbeat terakhir; slot kosong abu-abu; heartbeat saat maintenance berwarna indigo
 export default function HeartbeatBar({ beats = [], size = 20, className }) {
   const padded = [...Array(Math.max(0, size - beats.length)).fill(null), ...beats.slice(-size)];
   return (

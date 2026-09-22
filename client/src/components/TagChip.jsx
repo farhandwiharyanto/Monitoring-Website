@@ -8,8 +8,8 @@ export default function TagChip({ tag, active, onClick, onRemove, className }) {
       onClick={onClick}
       className={clsx(
         "inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-medium border transition-colors",
-        active ? "text-white" : "text-slate-300",
-        onClick && "hover:text-white",
+        active ? "text-fg" : "text-fg2",
+        onClick && "hover:text-fg",
         className
       )}
       style={{ borderColor: tag.color + (active ? "" : "66"), background: tag.color + (active ? "40" : "1a") }}
@@ -17,7 +17,7 @@ export default function TagChip({ tag, active, onClick, onRemove, className }) {
       <span className="h-1.5 w-1.5 rounded-full" style={{ background: tag.color }} />
       {tag.name}
       {onRemove && (
-        <span role="button" onClick={(e) => { e.stopPropagation(); onRemove(); }} className="ml-0.5 text-slate-400 hover:text-white">×</span>
+        <span role="button" onClick={(e) => { e.stopPropagation(); onRemove(); }} className="ml-0.5 text-fg3 hover:text-fg">×</span>
       )}
     </Comp>
   );

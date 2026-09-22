@@ -1,28 +1,56 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import { Activity, CheckCircle2, AlertTriangle, XCircle, Wrench } from "lucide-react";
+import { Activity, CheckCircle2, AlertTriangle, XCircle, Wrench, Info, Megaphone } from "lucide-react";
 import clsx from "clsx";
 import { api } from "../lib/api.js";
 import { getSocket } from "../lib/socket.js";
+import { useI18n } from "../lib/i18n.jsx";
+import { applyTheme } from "../lib/theme.jsx";
 import HeartbeatBar from "../components/HeartbeatBar.jsx";
 import StatusBadge from "../components/StatusBadge.jsx";
 import { fmtPct, fmtMs, fmtTime, fmtDuration, incidentDuration, timeAgo } from "../lib/format.js";
 
 const overallMeta = {
-  up: { text: "Semua sistem beroperasi normal", icon: CheckCircle2, cls: "border-up/40 bg-up/10 text-up" },
-  pending: { text: "Sebagian sistem sedang diperiksa", icon: AlertTriangle, cls: "border-pending/40 bg-pending/10 text-pending" },
-  down: { text: "Sebagian sistem mengalami gangguan", icon: XCircle, cls: "border-down/40 bg-down/10 text-down" },
-  maintenance: { text: "Sebagian sistem dalam maintenance terjadwal", icon: Wrench, cls: "border-maint/40 bg-maint/10 text-maint" },
+  up: { key: "public.up", icon: CheckCircle2, cls: "border-up/40 bg-up/10 text-up" },
+  pending: { key: "public.pending", icon: AlertTriangle, cls: "border-pending/40 bg-pending/10 text-pending" },
+  down: { key: "public.down", icon: XCircle, cls: "border-down/40 bg-down/10 text-down" },
+  maintenance: { key: "public.maintenance", icon: Wrench, cls: "border-maint/40 bg-maint/10 text-maint" },
 };
 
-export default function PublicStatus() {
-  const { slug } = useParams();
+const announcementMeta = {
+  info: { icon: Info, cls: "border-accent/40 bg-accent/10 text-accent" },
+  warning: { icon: Megaphone, cls: "border-pending/40 bg-pending/10 text-pending" },
+  critical: { icon: AlertTriangle, cls: "border-down/40 bg-down/10 text-down" },
+};
+
+// "#38bdf8" -> "56 189 248" agar bisa dipakai sebagai nilai CSS variable
+function hexToRgbTriplet(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || ""));
+  if (!m) return null;
+  const n = parseInt(m[1], 16);
+  return `${(n >> 16) & 255} ${(n >> 8) & 255} ${n & 255}`;
+}
+
+// `slug` boleh datang dari prop (custom domain) atau dari route /status/:slug
+export default function PublicStatus({ slug: slugProp }) {
+  const params = useParams();
+  const slug = slugProp || params.slug;
+  const { t } = useI18n();
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [tick, setTick] = useState(0);
 
   const load = () => api(`/public/status/${slug}`, { auth: false }).then(setData).catch((e) => setError(e.message));
-  useEffect(() => { load(); const t = setInterval(() => setTick((x) => x + 1), 30000); return () => clearInterval(t); }, [slug]); // eslint-disable-line
+  useEffect(() => { load(); const timer = setInterval(() => setTick((x) => x + 1), 30000); return () => clearInterval(timer); }, [slug]); // eslint-disable-line
+
+  // Halaman publik memakai tema & warna aksen miliknya sendiri, bukan tema admin
+  useEffect(() => {
+    if (!data?.page) return;
+    applyTheme(data.page.theme || "dark");
+    const rgb = hexToRgbTriplet(data.page.accent_color);
+    if (rgb) document.documentElement.style.setProperty("--c-accent", rgb);
+    return () => document.documentElement.style.removeProperty("--c-accent");
+  }, [data?.page?.theme, data?.page?.accent_color]);
 
   useEffect(() => {
     const socket = getSocket();
@@ -43,23 +71,42 @@ export default function PublicStatus() {
   useEffect(() => { if (tick) load(); }, [tick]); // eslint-disable-line
 
   if (error) return <div className="min-h-screen grid place-items-center text-muted">{error}</div>;
-  if (!data) return <div className="min-h-screen grid place-items-center text-muted">Memuat…</div>;
+  if (!data) return <div className="min-h-screen grid place-items-center text-muted">{t("common.loading")}</div>;
 
+  const page = data.page;
   const meta = overallMeta[data.overall];
   const Icon = meta.icon;
-  const incidents = data.monitors.flatMap((m) => m.incidents.map((i) => ({ ...i, monitor: m.name }))).sort((a, b) => (a.started_at < b.started_at ? 1 : -1)).slice(0, 10);
+  const ann = page.announcement ? announcementMeta[page.announcement_style] || announcementMeta.info : null;
+  const AnnIcon = ann?.icon;
+  const incidents = data.monitors
+    .flatMap((m) => m.incidents.map((i) => ({ ...i, monitor: m.name })))
+    .sort((a, b) => (a.started_at < b.started_at ? 1 : -1))
+    .slice(0, 10);
 
   return (
     <div className="min-h-screen bg-bg">
       <div className="max-w-3xl mx-auto px-4 py-12 space-y-8">
         <header className="text-center space-y-2">
-          <div className="inline-flex items-center gap-2 text-accent"><Activity size={22} /><span className="text-sm font-medium tracking-wide uppercase">Status</span></div>
-          <h1 className="text-3xl font-semibold text-white">{data.page.title}</h1>
-          {data.page.description && <p className="text-muted">{data.page.description}</p>}
+          {page.logo_url ? (
+            <img src={page.logo_url} alt={page.title} className="h-12 mx-auto object-contain" onError={(e) => (e.currentTarget.style.display = "none")} />
+          ) : (
+            <div className="inline-flex items-center gap-2 text-accent">
+              <Activity size={22} /><span className="text-sm font-medium tracking-wide uppercase">{t("public.statusLabel")}</span>
+            </div>
+          )}
+          <h1 className="text-3xl font-semibold text-fg">{page.title}</h1>
+          {page.description && <p className="text-muted">{page.description}</p>}
         </header>
 
+        {ann && (
+          <div className={clsx("rounded-xl border px-5 py-4 flex items-start gap-3 text-sm", ann.cls)}>
+            <AnnIcon size={18} className="mt-0.5 shrink-0" />
+            <p className="whitespace-pre-line">{page.announcement}</p>
+          </div>
+        )}
+
         <div className={clsx("rounded-xl border px-5 py-4 flex items-center gap-3 text-lg font-medium", meta.cls)}>
-          <Icon size={22} /> {meta.text}
+          <Icon size={22} /> {t(meta.key)}
         </div>
 
         <div className="card divide-y divide-border">
@@ -68,38 +115,52 @@ export default function PublicStatus() {
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-3 min-w-0">
                   <StatusBadge status={m.status} />
-                  <span className="font-medium text-slate-100 truncate">{m.name}</span>
+                  <span className="font-medium text-fg truncate">{m.name}</span>
                 </div>
-                <div className="text-right text-xs text-muted shrink-0">
-                  <span className="text-slate-200 tabular-nums">{fmtPct(m.uptime_30d)}</span> uptime 30 hari
+                {page.show_uptime && (
+                  <div className="text-right text-xs text-muted shrink-0">
+                    <span className="text-fg2 tabular-nums">{fmtPct(m.uptime_30d)}</span> {t("public.uptime30")}
+                  </div>
+                )}
+              </div>
+              {(page.show_bars || m.last_check) && (
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  {page.show_bars && <HeartbeatBar beats={m.heartbeats} size={30} />}
+                  <p className="text-xs text-muted">{fmtMs(m.last_response_time)} · {m.last_check ? timeAgo(m.last_check) : "—"}</p>
                 </div>
-              </div>
-              <div className="flex items-center justify-between gap-3 flex-wrap">
-                <HeartbeatBar beats={m.heartbeats} size={30} />
-                <p className="text-xs text-muted">{fmtMs(m.last_response_time)} · {m.last_check ? timeAgo(m.last_check) : "—"}</p>
-              </div>
+              )}
             </div>
           ))}
-          {data.monitors.length === 0 && <p className="p-8 text-center text-sm text-muted">Belum ada monitor pada halaman ini.</p>}
+          {data.monitors.length === 0 && <p className="p-8 text-center text-sm text-muted">{t("public.noMonitors")}</p>}
         </div>
 
-        <section>
-          <h2 className="text-sm uppercase tracking-wide text-muted mb-3">Incident 7 hari terakhir</h2>
-          {incidents.length === 0 ? (
-            <p className="card p-5 text-sm text-muted">Tidak ada incident. ✓</p>
-          ) : (
-            <ul className="card divide-y divide-border">
-              {incidents.map((i, idx) => (
-                <li key={idx} className="px-5 py-3 flex items-center justify-between gap-3 text-sm">
-                  <div><p className="text-slate-100">{i.monitor}</p><p className="text-xs text-muted">{fmtTime(i.started_at)}{i.resolved_at ? ` → ${fmtTime(i.resolved_at)}` : ""}</p></div>
-                  <span className={clsx("tabular-nums text-xs", i.resolved_at ? "text-muted" : "text-down")}>{i.resolved_at ? fmtDuration(incidentDuration(i)) : "berlangsung"}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+        {page.show_incidents && (
+          <section>
+            <h2 className="text-sm uppercase tracking-wide text-muted mb-3">{t("public.incidents7d")}</h2>
+            {incidents.length === 0 ? (
+              <p className="card p-5 text-sm text-muted">{t("public.noIncidents")}</p>
+            ) : (
+              <ul className="card divide-y divide-border">
+                {incidents.map((i, idx) => (
+                  <li key={idx} className="px-5 py-3 flex items-center justify-between gap-3 text-sm">
+                    <div>
+                      <p className="text-fg">{i.monitor}</p>
+                      <p className="text-xs text-muted">{fmtTime(i.started_at)}{i.resolved_at ? ` → ${fmtTime(i.resolved_at)}` : ""}</p>
+                    </div>
+                    <span className={clsx("tabular-nums text-xs", i.resolved_at ? "text-muted" : "text-down")}>
+                      {i.resolved_at ? fmtDuration(incidentDuration(i)) : t("public.ongoing")}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        )}
 
-        <footer className="text-center text-xs text-muted pt-6">Powered by Pulsewatch</footer>
+        <footer className="text-center text-xs text-muted pt-6 space-y-1">
+          {page.footer_text && <p className="text-fg3">{page.footer_text}</p>}
+          <p>{t("public.poweredBy")}</p>
+        </footer>
       </div>
     </div>
   );

@@ -15,3 +15,25 @@ export async function api(path, { method = "GET", body, auth = true } = {}) {
   if (!res.ok) throw new Error(data.error || `Request gagal (${res.status})`);
   return data;
 }
+
+// Unduh berkas dari endpoint ber-auth: fetch dulu (agar header Authorization
+// terkirim), baru dijadikan blob dan disimpan lewat <a download>.
+export async function download(path) {
+  const res = await fetch(`/api${path}`, { headers: getToken() ? { Authorization: `Bearer ${getToken()}` } : {} });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Request gagal (${res.status})`);
+  }
+  const disposition = res.headers.get("Content-Disposition") || "";
+  const match = disposition.match(/filename="?([^"]+)"?/);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = match ? match[1] : "pulsewatch-export";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  // Beri jeda agar unduhan sempat dimulai sebelum URL dilepas
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}

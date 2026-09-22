@@ -127,12 +127,12 @@ statusPagesRouter.delete("/:id", requireAdmin, async (req, res) => {
 
 // Halaman mana yang dilayani untuk domain ini? Dipakai SPA agar custom domain
 // langsung menampilkan status page di path "/".
+// Selalu 200: domain biasa cukup mendapat slug null, bukan error.
 publicStatusRouter.get("/resolve", async (req, res) => {
   const host = hostify(req.headers.host || "");
-  if (!host) return res.status(404).json({ error: "Tidak ada status page untuk domain ini" });
+  if (!host) return res.json({ slug: null });
   const page = await prisma.statusPage.findFirst({ where: { custom_domain: host, published: true }, select: { slug: true } });
-  if (!page) return res.status(404).json({ error: "Tidak ada status page untuk domain ini" });
-  res.json({ slug: page.slug });
+  res.json({ slug: page ? page.slug : null });
 });
 
 publicStatusRouter.get("/:slug", async (req, res) => {

@@ -1,6 +1,6 @@
 import clsx from "clsx";
 
-export default function StatCard({ label, value, sub, icon: Icon, tone = "text-white" }) {
+export default function StatCard({ label, value, sub, icon: Icon, tone = "text-fg" }) {
   return (
     <div className="card p-5 flex items-start justify-between">
       <div>

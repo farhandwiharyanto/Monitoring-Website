@@ -33,6 +33,12 @@ services:
       BASE_URL: ${BASE_URL:-http://localhost:3001}
       # Zona waktu untuk jadwal maintenance berulang (harian/mingguan)
       TZ: ${TZ:-Asia/Jakarta}
+      # Opsional — lihat .env.example untuk daftar lengkapnya
+      JWT_TTL: ${JWT_TTL:-7d}
+      TRUST_PROXY: ${TRUST_PROXY:-false}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      CERT_EXPIRY_WARN_DAYS: ${CERT_EXPIRY_WARN_DAYS:-14}
+      HEARTBEAT_RETENTION_DAYS: ${HEARTBEAT_RETENTION_DAYS:-90}
     volumes:
       # Opsional: taruh file SQLite lama di ./legacy/ untuk dimigrasi
       # docker compose exec pulsewatch npm run migrate:sqlite -- /legacy/pulsewatch.db

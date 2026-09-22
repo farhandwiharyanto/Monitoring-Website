@@ -2,18 +2,61 @@
 @tailwind components;
 @tailwind utilities;
 
-:root { color-scheme: dark; }
-body { @apply bg-bg text-slate-200 antialiased; }
-* { scrollbar-width: thin; scrollbar-color: #1f2937 transparent; }
+/* Token warna sebagai triplet RGB supaya modifier opacity Tailwind
+   (mis. bg-accent/10) tetap bekerja. Tema ditentukan oleh class pada <html>. */
+:root,
+:root.dark {
+  color-scheme: dark;
+  --c-bg: 11 15 23;
+  --c-panel: 17 24 39;
+  --c-panel2: 21 29 44;
+  --c-border: 31 41 55;
+  --c-muted: 139 149 167;
+  --c-fg: 255 255 255;
+  --c-fg2: 226 232 240;
+  --c-fg3: 148 163 184;
+  --c-accent: 56 189 248;
+  --c-accentfg: 2 6 23;
+  --c-accenthover: 125 211 252;
+  --c-up: 34 197 94;
+  --c-down: 239 68 68;
+  --c-pending: 245 158 11;
+  --c-maint: 129 140 248;
+  --scrollbar-thumb: #1f2937;
+}
+
+:root.light {
+  color-scheme: light;
+  --c-bg: 248 250 252;
+  --c-panel: 255 255 255;
+  --c-panel2: 241 245 249;
+  --c-border: 226 232 240;
+  --c-muted: 100 116 139;
+  --c-fg: 15 23 42;
+  --c-fg2: 51 65 85;
+  --c-fg3: 100 116 139;
+  /* Aksen digelapkan di tema terang agar kontras teks tetap memadai */
+  --c-accent: 2 132 199;
+  --c-accentfg: 255 255 255;
+  --c-accenthover: 3 105 161;
+  --c-up: 22 163 74;
+  --c-down: 220 38 38;
+  --c-pending: 217 119 6;
+  --c-maint: 79 70 229;
+  --scrollbar-thumb: #cbd5e1;
+}
+
+body { @apply bg-bg text-fg2 antialiased; }
+* { scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb) transparent; }
 
 @layer components {
   .card { @apply bg-panel border border-border rounded-xl; }
-  .input { @apply w-full bg-bg border border-border rounded-lg px-3 py-2 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-accent/60 focus:ring-1 focus:ring-accent/30; }
+  .input { @apply w-full bg-bg border border-border rounded-lg px-3 py-2 text-sm text-fg placeholder:text-muted/60 focus:outline-none focus:border-accent/60 focus:ring-1 focus:ring-accent/30; }
   .label { @apply block text-xs font-medium text-muted mb-1.5 uppercase tracking-wide; }
   .btn { @apply inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed; }
-  .btn-primary { @apply btn bg-accent text-slate-950 hover:bg-sky-300; }
-  .btn-ghost { @apply btn bg-transparent border border-border text-slate-300 hover:bg-panel2 hover:text-white; }
-  .btn-danger { @apply btn bg-down/10 text-red-400 border border-down/30 hover:bg-down/20; }
+  .btn-primary { @apply btn bg-accent text-accentfg hover:bg-accenthover; }
+  .btn-ghost { @apply btn bg-transparent border border-border text-fg2 hover:bg-panel2 hover:text-fg; }
+  .btn-danger { @apply btn bg-down/10 text-down border border-down/30 hover:bg-down/20; }
 }
 
 @keyframes pulse-dot { 0%,100% { opacity: 1 } 50% { opacity: .35 } }

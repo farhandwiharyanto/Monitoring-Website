@@ -3,10 +3,12 @@ import { Plus, Trash2, KeyRound, ShieldCheck, Eye, X } from "lucide-react";
 import clsx from "clsx";
 import { api } from "../lib/api.js";
 import { useAuth } from "../lib/auth.jsx";
+import { useI18n } from "../lib/i18n.jsx";
 import { fmtTime } from "../lib/format.js";
 
 export default function Users() {
   const { user: me } = useAuth();
+  const { t } = useI18n();
   const [list, setList] = useState([]);
   const [form, setForm] = useState(null); // {username,password,role} | {id, password} (reset)
   const [error, setError] = useState("");
@@ -26,7 +28,7 @@ export default function Users() {
     try { await api(`/users/${u.id}`, { method: "PUT", body: { role } }); load(); } catch (err) { alert(err.message); }
   };
   const remove = async (u) => {
-    if (!confirm(`Hapus user "${u.username}"?`)) return;
+    if (!confirm(t("users.confirmDelete", { username: u.username }))) return;
     try { await api(`/users/${u.id}`, { method: "DELETE" }); load(); } catch (err) { alert(err.message); }
   };
 
@@ -34,10 +36,10 @@ export default function Users() {
     <div className="space-y-6">
       <div className="flex items-end justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-white">Users</h1>
-          <p className="text-sm text-muted mt-1">Admin: akses penuh · Viewer: hanya lihat dashboard & status</p>
+          <h1 className="text-2xl font-semibold text-fg">{t("users.title")}</h1>
+          <p className="text-sm text-muted mt-1">{t("users.subtitle")}</p>
         </div>
-        <button className="btn-primary" onClick={() => { setForm({ username: "", password: "", role: "viewer" }); setError(""); }}><Plus size={16} /> Tambah user</button>
+        <button className="btn-primary" onClick={() => { setForm({ username: "", password: "", role: "viewer" }); setError(""); }}><Plus size={16} /> {t("users.addUser")}</button>
       </div>
 
       <div className="card divide-y divide-border">
@@ -47,8 +49,8 @@ export default function Users() {
               {u.role === "admin" ? <ShieldCheck size={16} className="text-accent" /> : <Eye size={16} className="text-muted" />}
             </span>
             <div className="flex-1 min-w-0">
-              <p className="font-medium text-slate-100">{u.username} {u.id === me.id && <span className="text-xs text-muted">(kamu)</span>}</p>
-              <p className="text-xs text-muted">dibuat {fmtTime(u.created_at)}</p>
+              <p className="font-medium text-fg">{u.username} {u.id === me.id && <span className="text-xs text-muted">{t("users.you")}</span>}</p>
+              <p className="text-xs text-muted">{t("users.createdAt", { date: fmtTime(u.created_at) })}</p>
             </div>
             <select
               className="input !w-auto !py-1.5 text-xs"
@@ -59,7 +61,7 @@ export default function Users() {
               <option value="admin">admin</option>
               <option value="viewer">viewer</option>
             </select>
-            <button className="btn-ghost !px-2.5" title="Reset password" onClick={() => { setForm({ id: u.id, username: u.username, password: "" }); setError(""); }}><KeyRound size={14} /></button>
+            <button className="btn-ghost !px-2.5" title={t("users.resetPassword")} onClick={() => { setForm({ id: u.id, username: u.username, password: "" }); setError(""); }}><KeyRound size={14} /></button>
             <button className="btn-danger !px-2.5" disabled={u.id === me.id} onClick={() => remove(u)}><Trash2 size={14} /></button>
           </div>
         ))}
@@ -69,28 +71,28 @@ export default function Users() {
         <div className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm grid place-items-center p-4" onClick={() => setForm(null)}>
           <form onSubmit={save} onClick={(e) => e.stopPropagation()} className="card w-full max-w-md p-6 space-y-4">
             <div className="flex items-center justify-between">
-              <h2 className="font-medium text-white">{form.id ? `Reset password: ${form.username}` : "Tambah user"}</h2>
-              <button type="button" onClick={() => setForm(null)} className="text-muted hover:text-white"><X size={18} /></button>
+              <h2 className="font-medium text-fg">{form.id ? t("users.resetTitle", { username: form.username }) : t("users.addUser")}</h2>
+              <button type="button" onClick={() => setForm(null)} className="text-muted hover:text-fg"><X size={18} /></button>
             </div>
             {!form.id && (
-              <div><label className="label">Username</label><input className="input" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} required autoFocus /></div>
+              <div><label className="label">{t("users.username")}</label><input className="input" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} required autoFocus /></div>
             )}
-            <div><label className="label">{form.id ? "Password baru" : "Password"}</label><input className="input" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required minLength={6} /></div>
+            <div><label className="label">{form.id ? t("users.newPassword") : t("users.password")}</label><input className="input" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required minLength={8} /></div>
             {!form.id && (
               <div>
-                <label className="label">Role</label>
+                <label className="label">{t("users.role")}</label>
                 <div className="grid grid-cols-2 gap-2">
-                  {[["admin", "Admin", "Akses penuh"], ["viewer", "Viewer", "Hanya lihat"]].map(([v, l, d]) => (
+                  {[["admin", "users.admin", "users.adminDesc"], ["viewer", "users.viewer", "users.viewerDesc"]].map(([v, labelKey, descKey]) => (
                     <button type="button" key={v} onClick={() => setForm({ ...form, role: v })} className={clsx("text-left rounded-lg border p-3", form.role === v ? "border-accent bg-accent/10" : "border-border")}>
-                      <p className={clsx("text-sm font-medium", form.role === v ? "text-accent" : "text-slate-200")}>{l}</p>
-                      <p className="text-xs text-muted">{d}</p>
+                      <p className={clsx("text-sm font-medium", form.role === v ? "text-accent" : "text-fg2")}>{t(labelKey)}</p>
+                      <p className="text-xs text-muted">{t(descKey)}</p>
                     </button>
                   ))}
                 </div>
               </div>
             )}
             {error && <p className="text-sm text-down">{error}</p>}
-            <button className="btn-primary">Simpan</button>
+            <button className="btn-primary">{t("common.save")}</button>
           </form>
         </div>
       )}
