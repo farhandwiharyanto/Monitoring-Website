@@ -1,0 +1,42 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: pulsewatch-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-pulsewatch}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pulsewatch}
+      POSTGRES_DB: ${POSTGRES_DB:-pulsewatch}
+    volumes:
+      - pulsewatch-pgdata:/var/lib/postgresql/data   # persist data Postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pulsewatch} -d ${POSTGRES_DB:-pulsewatch}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  pulsewatch:
+    build: .
+    container_name: pulsewatch
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "3001:3001"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-pulsewatch}:${POSTGRES_PASSWORD:-pulsewatch}@postgres:5432/${POSTGRES_DB:-pulsewatch}
+      # GANTI nilai ini di production (lewat file .env)
+      JWT_SECRET: ${JWT_SECRET:-change-me-to-a-long-random-string}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
+      BASE_URL: ${BASE_URL:-http://localhost:3001}
+      # Zona waktu untuk jadwal maintenance berulang (harian/mingguan)
+      TZ: ${TZ:-Asia/Jakarta}
+    volumes:
+      # Opsional: taruh file SQLite lama di ./legacy/ untuk dimigrasi
+      # docker compose exec pulsewatch npm run migrate:sqlite -- /legacy/pulsewatch.db
+      - ./legacy:/legacy:ro
+
+volumes:
+  pulsewatch-pgdata:

@@ -1,0 +1,172 @@
+// Pulsewatch — PostgreSQL schema
+// Nama field sengaja snake_case agar bentuk JSON API tetap sama dengan versi SQLite.
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            Int      @id @default(autoincrement())
+  username      String   @unique
+  password_hash String
+  role          String   @default("admin") // admin | viewer
+  created_at    DateTime @default(now())
+
+  @@map("users")
+}
+
+model Monitor {
+  id                    Int      @id @default(autoincrement())
+  name                  String
+  type                  String   @default("http") // http | tcp | ping | dns
+  url                   String?
+  hostname              String?
+  port                  Int?
+  dns_resolve_type      String?  @default("A")
+  dns_expected          String?
+  method                String   @default("GET")
+  interval_seconds      Int      @default(60)
+  timeout_seconds       Int      @default(30)
+  max_retries           Int      @default(0)
+  expected_status_codes String   @default("200-299")
+  keyword               String?
+  active                Boolean  @default(true)
+  created_at            DateTime @default(now())
+  updated_at            DateTime @default(now()) @updatedAt
+
+  heartbeats    Heartbeat[]
+  incidents     Incident[]
+  notifications MonitorNotification[]
+  status_pages  StatusPageMonitor[]
+  tags          MonitorTag[]
+  maintenance   MaintenanceWindow[]
+
+  @@map("monitors")
+}
+
+model Heartbeat {
+  id            Int      @id @default(autoincrement())
+  monitor_id    Int
+  status        Int      // 0 down, 1 up, 2 pending
+  message       String?
+  response_time Int?
+  important     Boolean  @default(false) // true jika status berubah up<->down
+  maintenance   Boolean  @default(false) // dicatat saat monitor dalam maintenance window
+  created_at    DateTime @default(now())
+
+  monitor Monitor @relation(fields: [monitor_id], references: [id], onDelete: Cascade)
+
+  @@index([monitor_id, created_at(sort: Desc)])
+  @@map("heartbeats")
+}
+
+model Incident {
+  id          Int       @id @default(autoincrement())
+  monitor_id  Int
+  started_at  DateTime  @default(now())
+  resolved_at DateTime?
+  cause       String?
+  maintenance Boolean   @default(false) // down terjadi saat maintenance
+  notified    Boolean   @default(false) // alert "down" sudah terkirim
+
+  monitor Monitor @relation(fields: [monitor_id], references: [id], onDelete: Cascade)
+
+  @@index([monitor_id, started_at(sort: Desc)])
+  @@map("incidents")
+}
+
+model Notification {
+  id         Int      @id @default(autoincrement())
+  name       String
+  type       String   // telegram | discord | email | webhook
+  config     Json     @default("{}")
+  is_default Boolean  @default(false)
+  created_at DateTime @default(now())
+
+  monitors MonitorNotification[]
+
+  @@map("notifications")
+}
+
+model MonitorNotification {
+  monitor_id      Int
+  notification_id Int
+
+  monitor      Monitor      @relation(fields: [monitor_id], references: [id], onDelete: Cascade)
+  notification Notification @relation(fields: [notification_id], references: [id], onDelete: Cascade)
+
+  @@id([monitor_id, notification_id])
+  @@map("monitor_notifications")
+}
+
+model StatusPage {
+  id          Int      @id @default(autoincrement())
+  slug        String   @unique
+  title       String
+  description String?
+  published   Boolean  @default(true)
+  created_at  DateTime @default(now())
+
+  monitors StatusPageMonitor[]
+
+  @@map("status_pages")
+}
+
+model StatusPageMonitor {
+  status_page_id Int
+  monitor_id     Int
+  sort_order     Int @default(0)
+
+  status_page StatusPage @relation(fields: [status_page_id], references: [id], onDelete: Cascade)
+  monitor     Monitor    @relation(fields: [monitor_id], references: [id], onDelete: Cascade)
+
+  @@id([status_page_id, monitor_id])
+  @@map("status_page_monitors")
+}
+
+model Tag {
+  id         Int      @id @default(autoincrement())
+  name       String   @unique
+  color      String   @default("#38bdf8")
+  created_at DateTime @default(now())
+
+  monitors MonitorTag[]
+
+  @@map("tags")
+}
+
+model MonitorTag {
+  monitor_id Int
+  tag_id     Int
+
+  monitor Monitor @relation(fields: [monitor_id], references: [id], onDelete: Cascade)
+  tag     Tag     @relation(fields: [tag_id], references: [id], onDelete: Cascade)
+
+  @@id([monitor_id, tag_id])
+  @@map("monitor_tags")
+}
+
+// recurring: none | daily | weekly. Untuk recurring, start_at/end_at menentukan
+// jam mulai & durasi; days_of_week (weekly) berisi "0,1,..,6" (0 = Minggu).
+model MaintenanceWindow {
+  id           Int      @id @default(autoincrement())
+  monitor_id   Int
+  title        String
+  start_at     DateTime
+  end_at       DateTime
+  recurring    String   @default("none")
+  days_of_week String?
+  active       Boolean  @default(true)
+  created_at   DateTime @default(now())
+
+  monitor Monitor @relation(fields: [monitor_id], references: [id], onDelete: Cascade)
+
+  @@index([monitor_id])
+  @@map("maintenance_windows")
+}

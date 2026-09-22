@@ -1,0 +1,20 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: dark; }
+body { @apply bg-bg text-slate-200 antialiased; }
+* { scrollbar-width: thin; scrollbar-color: #1f2937 transparent; }
+
+@layer components {
+  .card { @apply bg-panel border border-border rounded-xl; }
+  .input { @apply w-full bg-bg border border-border rounded-lg px-3 py-2 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-accent/60 focus:ring-1 focus:ring-accent/30; }
+  .label { @apply block text-xs font-medium text-muted mb-1.5 uppercase tracking-wide; }
+  .btn { @apply inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed; }
+  .btn-primary { @apply btn bg-accent text-slate-950 hover:bg-sky-300; }
+  .btn-ghost { @apply btn bg-transparent border border-border text-slate-300 hover:bg-panel2 hover:text-white; }
+  .btn-danger { @apply btn bg-down/10 text-red-400 border border-down/30 hover:bg-down/20; }
+}
+
+@keyframes pulse-dot { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
+.pulse-dot { animation: pulse-dot 1.6s ease-in-out infinite; }

@@ -1,0 +1,12 @@
+{
+  "name": "pulsewatch",
+  "private": true,
+  "scripts": {
+    "install:all": "npm install --prefix server && npm install --prefix client",
+    "dev": "npm run dev --prefix server & npm run dev --prefix client",
+    "build": "npm run build --prefix client",
+    "start": "npm start --prefix server",
+    "db:migrate": "npm run db:migrate --prefix server",
+    "migrate:sqlite": "npm run migrate:sqlite --prefix server --"
+  }
+}
