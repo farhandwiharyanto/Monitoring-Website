@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { Pencil, Trash2, Pause, Play, ArrowLeft, ExternalLink, Wrench, Plus, ShieldCheck, ShieldAlert, RefreshCw, Copy, Download, Webhook } from "lucide-react";
+import { Pencil, Trash2, Pause, Play, ArrowLeft, ExternalLink, Wrench, Plus, ShieldCheck, ShieldAlert, RefreshCw, Copy, Download, Webhook, Globe2, CheckCircle2, XCircle, AlertTriangle } from "lucide-react";
 import clsx from "clsx";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { api, download } from "../lib/api.js";
@@ -33,16 +33,24 @@ export default function MonitorDetail() {
   const [incidents, setIncidents] = useState([]);
   const [events, setEvents] = useState([]);
   const [hours, setHours] = useState(24);
+  // Grafik & tabel mengikuti lokasi terpilih; "" berarti lokasi primary (bawaan)
+  const [locationView, setLocationView] = useState("");
   const [error, setError] = useState("");
   const [certBusy, setCertBusy] = useState(false);
   const [copied, setCopied] = useState(false);
 
   const load = () =>
-    Promise.all([api(`/monitors/${id}`), api(`/monitors/${id}/heartbeats?hours=${hours}`), api(`/monitors/${id}/incidents`), api(`/monitors/${id}/events`), api(`/monitors/${id}/maintenance`)])
+    Promise.all([
+      api(`/monitors/${id}`),
+      api(`/monitors/${id}/heartbeats?hours=${hours}${locationView ? `&location=${encodeURIComponent(locationView)}` : ""}`),
+      api(`/monitors/${id}/incidents`),
+      api(`/monitors/${id}/events${locationView ? `?location=${encodeURIComponent(locationView)}` : ""}`),
+      api(`/monitors/${id}/maintenance`),
+    ])
       .then(([m, b, i, e, w]) => { setMonitor(m); setBeats(b); setIncidents(i); setEvents(e); setWindows(w); })
       .catch((e) => setError(e.message));
 
-  useEffect(() => { load(); }, [id, hours]); // eslint-disable-line
+  useEffect(() => { load(); }, [id, hours, locationView]); // eslint-disable-line
 
   useEffect(() => {
     const socket = getSocket();
@@ -93,7 +101,9 @@ export default function MonitorDetail() {
   const maxMs = withMs.length ? Math.max(...withMs.map((d) => d.ms)) : null;
   const rangeLabel = t(RANGES.find((r) => r.h === hours)?.key || "detail.range24h");
   const certDays = daysUntil(monitor.cert_expires_at);
+  const certExpired = certDays !== null && certDays < 0;
   const certWarn = certDays !== null && certDays <= 14;
+  const locations = monitor.locations || [];
   const isHttps = monitor.type === "http" && /^https:/i.test(monitor.url || "");
 
   return (
@@ -155,29 +165,105 @@ export default function MonitorDetail() {
       )}
 
       {isHttps && (
-        <div className="card p-5 flex items-center gap-4 flex-wrap">
-          <span className={clsx("h-9 w-9 rounded-lg grid place-items-center", certWarn ? "bg-pending/15" : "bg-panel2")}>
-            {certWarn ? <ShieldAlert size={16} className="text-pending" /> : <ShieldCheck size={16} className="text-up" />}
-          </span>
-          <div className="flex-1 min-w-0">
-            <p className="font-medium text-fg text-sm">{t("detail.certificate")}</p>
-            {monitor.check_cert === false ? (
-              <p className="text-xs text-muted">{t("detail.certOff")}</p>
-            ) : monitor.cert_expires_at ? (
-              <p className="text-xs text-muted">
-                {t("detail.certExpires", { date: fmtDate(monitor.cert_expires_at) })}
-                <span className={clsx("ml-1", certWarn ? "text-pending" : "text-up")}>({t("detail.certDays", { n: certDays })})</span>
-                {monitor.cert_issuer && <span className="ml-2">· {t("detail.certIssuer", { issuer: monitor.cert_issuer })}</span>}
+        <div className="card p-5 space-y-3">
+          <div className="flex items-center gap-4 flex-wrap">
+            <span className={clsx("h-9 w-9 rounded-lg grid place-items-center", certExpired ? "bg-down/15" : certWarn ? "bg-pending/15" : "bg-panel2")}>
+              {certExpired || !monitor.cert_chain_valid && monitor.cert_chain_valid !== null
+                ? <ShieldAlert size={16} className="text-down" />
+                : certWarn ? <ShieldAlert size={16} className="text-pending" /> : <ShieldCheck size={16} className="text-up" />}
+            </span>
+            <div className="flex-1 min-w-0">
+              <p className="font-medium text-fg text-sm flex items-center gap-2 flex-wrap">
+                {t("detail.certificate")}
+                {/* Badge peringatan saat sisa umur < 14 hari */}
+                {certExpired && (
+                  <span className="text-[10px] uppercase tracking-wider text-down border border-down/40 bg-down/10 rounded px-1.5 py-0.5">
+                    {t("detail.certBadgeExpired")}
+                  </span>
+                )}
+                {!certExpired && certWarn && (
+                  <span className="text-[10px] uppercase tracking-wider text-pending border border-pending/40 bg-pending/10 rounded px-1.5 py-0.5">
+                    {t("detail.certBadgeWarning")}
+                  </span>
+                )}
               </p>
-            ) : (
-              <p className="text-xs text-muted">{t("detail.certUnknown")}</p>
+              {monitor.check_cert === false ? (
+                <p className="text-xs text-muted">{t("detail.certOff")}</p>
+              ) : monitor.cert_expires_at ? (
+                <p className="text-xs text-muted">
+                  {t("detail.certExpires", { date: fmtDate(monitor.cert_expires_at) })}
+                  {monitor.cert_issuer && <span className="ml-2">· {t("detail.certIssuer", { issuer: monitor.cert_issuer })}</span>}
+                  {monitor.cert_checked_at && <span className="ml-2">· {t("detail.certCheckedAt", { when: timeAgo(monitor.cert_checked_at) })}</span>}
+                </p>
+              ) : (
+                <p className="text-xs text-muted">{t("detail.certUnknown")}</p>
+              )}
+            </div>
+            {monitor.cert_expires_at && (
+              <div className="text-right">
+                <p className={clsx("text-2xl font-semibold tabular-nums", certExpired ? "text-down" : certWarn ? "text-pending" : "text-up")}>
+                  {certExpired ? Math.abs(certDays) : certDays}
+                </p>
+                <p className="text-[11px] text-muted">
+                  {certExpired ? t("detail.certExpired", { n: Math.abs(certDays) }) : t("detail.certCountdown", { n: certDays })}
+                </p>
+              </div>
+            )}
+            {isAdmin && (
+              <button className="btn-ghost !py-1.5" onClick={checkCert} disabled={certBusy}>
+                <RefreshCw size={14} className={certBusy ? "animate-spin" : ""} /> {certBusy ? t("detail.certChecking") : t("detail.certCheckNow")}
+              </button>
             )}
           </div>
-          {isAdmin && (
-            <button className="btn-ghost !py-1.5" onClick={checkCert} disabled={certBusy}>
-              <RefreshCw size={14} className={certBusy ? "animate-spin" : ""} /> {certBusy ? t("detail.certChecking") : t("detail.certCheckNow")}
-            </button>
+          {monitor.cert_chain_valid !== null && monitor.cert_chain_valid !== undefined && (
+            <p className={clsx("text-xs flex items-center gap-1.5", monitor.cert_chain_valid ? "text-up" : "text-down")}>
+              {monitor.cert_chain_valid ? <CheckCircle2 size={13} /> : <XCircle size={13} />}
+              {monitor.cert_chain_valid ? t("detail.certChainValid") : t("detail.certChainInvalid", { error: monitor.cert_chain_error || "-" })}
+            </p>
           )}
+        </div>
+      )}
+
+      {/* Assertion body: hasil pengecekan terakhir, berguna saat menelusuri kegagalan */}
+      {monitor.assertion_summary && (
+        <div className="card p-5 flex items-start gap-4 flex-wrap">
+          <span className={clsx("h-9 w-9 rounded-lg grid place-items-center", monitor.last_assertion_ok === false ? "bg-down/15" : "bg-panel2")}>
+            {monitor.last_assertion_ok === false ? <XCircle size={16} className="text-down" /> : <CheckCircle2 size={16} className="text-up" />}
+          </span>
+          <div className="flex-1 min-w-0">
+            <p className="font-medium text-fg text-sm">{t("detail.assertionTitle")}</p>
+            <code className="text-xs font-mono text-fg2 break-all">{monitor.assertion_summary}</code>
+            {monitor.last_assertion_message && (
+              <p className={clsx("text-xs mt-1", monitor.last_assertion_ok ? "text-up" : "text-down")}>{monitor.last_assertion_message}</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Perbandingan antar lokasi pengecekan */}
+      {locations.length > 0 && (
+        <div className="card p-5 space-y-3">
+          <h2 className="font-medium text-fg text-sm flex items-center gap-2">
+            <Globe2 size={15} className="text-accent" /> {t("detail.locations")}
+          </h2>
+          {monitor.location_split && (
+            <p className="rounded-lg border border-pending/40 bg-pending/10 text-pending text-xs px-3 py-2 flex items-start gap-2">
+              <AlertTriangle size={14} className="mt-0.5 shrink-0" /> {t("detail.locationSplitWarning")}
+            </p>
+          )}
+          <ul className="divide-y divide-border">
+            {locations.map((l) => (
+              <li key={l.location} className="py-2.5 flex items-center gap-3 flex-wrap">
+                <StatusBadge status={l.status} />
+                <span className="font-medium text-fg2 text-sm">{l.location}</span>
+                {l.is_primary && <span className="text-[10px] uppercase tracking-wider text-accent border border-accent/40 rounded px-1.5 py-0.5">{t("detail.locationPrimary")}</span>}
+                {l.stale && <span className="text-[10px] uppercase tracking-wider text-muted border border-border rounded px-1.5 py-0.5">{t("detail.locationStale")}</span>}
+                <span className="text-xs text-muted truncate flex-1 min-w-0">{l.message}</span>
+                <span className="text-xs text-muted tabular-nums shrink-0">{fmtMs(l.response_time)} · {timeAgo(l.last_check)}</span>
+              </li>
+            ))}
+          </ul>
+          {locations.length === 1 && <p className="text-xs text-muted">{t("detail.locationOnlyOne")}</p>}
         </div>
       )}
 
@@ -196,12 +282,20 @@ export default function MonitorDetail() {
       <div className="card p-5">
         <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
           <h2 className="font-medium text-fg">{t("detail.responseTime")}</h2>
+          <div className="flex gap-2 items-center flex-wrap">
+            {locations.length > 1 && (
+              <select className="input !w-auto !py-1 text-xs" value={locationView} onChange={(e) => setLocationView(e.target.value)}>
+                {locations.map((l) => <option key={l.location} value={l.is_primary ? "" : l.location}>{l.location}</option>)}
+                <option value="all">{t("detail.locationAll")}</option>
+              </select>
+            )}
           <div className="flex gap-1">
             {RANGES.map((r) => (
               <button key={r.h} onClick={() => setHours(r.h)} className={clsx("px-2.5 py-1 rounded-md text-xs", hours === r.h ? "bg-accent/15 text-accent" : "text-muted hover:text-fg")}>
                 {t(r.key)}
               </button>
             ))}
+          </div>
           </div>
         </div>
         <div className="h-64">

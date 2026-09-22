@@ -37,12 +37,47 @@ services:
       JWT_TTL: ${JWT_TTL:-7d}
       TRUST_PROXY: ${TRUST_PROXY:-false}
       CORS_ORIGINS: ${CORS_ORIGINS:-}
+      CERT_ALERT_THRESHOLDS: ${CERT_ALERT_THRESHOLDS:-30,14,7,3}
+      CERT_CHECK_INTERVAL_HOURS: ${CERT_CHECK_INTERVAL_HOURS:-6}
       CERT_EXPIRY_WARN_DAYS: ${CERT_EXPIRY_WARN_DAYS:-14}
       HEARTBEAT_RETENTION_DAYS: ${HEARTBEAT_RETENTION_DAYS:-90}
+      # Lokasi instance ini; jadi label pada setiap heartbeat yang ditulisnya
+      LOCATION_NAME: ${LOCATION_NAME:-primary}
+      PRIMARY_LOCATION: ${PRIMARY_LOCATION:-primary}
+      # Token scrape Prometheus (kosong = hanya token login yang diterima)
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
     volumes:
       # Opsional: taruh file SQLite lama di ./legacy/ untuk dimigrasi
       # docker compose exec pulsewatch npm run migrate:sqlite -- /legacy/pulsewatch.db
       - ./legacy:/legacy:ro
+
+  # --- Worker lokasi kedua (opsional) ---
+  # Contoh ini menjalankan worker di mesin yang sama, jadi hanya berguna untuk
+  # mencoba mekanismenya. Multi-location yang sebenarnya berarti menjalankan
+  # service ini di host/region lain dengan DATABASE_URL menunjuk balik ke
+  # Postgres di sini (lihat README).
+  #
+  #   docker compose --profile multi-location up -d
+  #
+  pulsewatch-worker:
+    profiles: ["multi-location"]
+    build: .
+    container_name: pulsewatch-worker
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-pulsewatch}:${POSTGRES_PASSWORD:-pulsewatch}@postgres:5432/${POSTGRES_DB:-pulsewatch}
+      # JWT_SECRET harus sama dengan instance web: kunci enkripsi kredensial
+      # monitor diturunkan darinya (atau set ENCRYPTION_KEY yang sama di keduanya).
+      JWT_SECRET: ${JWT_SECRET:-change-me-to-a-long-random-string}
+      WORKER_ONLY: "true"
+      LOCATION_NAME: ${WORKER_LOCATION_NAME:-secondary}
+      PRIMARY_LOCATION: ${PRIMARY_LOCATION:-primary}
+      TZ: ${TZ:-Asia/Jakarta}
+    # Migration dijalankan instance web; worker langsung mulai agar tidak balapan
+    command: ["node", "src/index.js"]
 
 volumes:
   pulsewatch-pgdata:

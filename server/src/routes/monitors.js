@@ -317,11 +317,14 @@ monitorsRouter.get("/:id/incidents", async (req, res) => {
   res.json(await prisma.incident.findMany({ where: { monitor_id: Number(req.params.id) }, orderBy: { started_at: "desc" }, take: 100 }));
 });
 
-// Event penting (perubahan status) untuk list "Important events"
+// Event penting (perubahan status) untuk list "Important events".
+// Seperti grafik, defaultnya lokasi primary supaya daftarnya satu alur cerita;
+// ?location=all menampilkan perubahan dari semua lokasi.
 monitorsRouter.get("/:id/events", async (req, res) => {
-  res.json(
-    await prisma.heartbeat.findMany({ where: { monitor_id: Number(req.params.id), important: true }, orderBy: { created_at: "desc" }, take: 50 })
-  );
+  const requested = req.query.location ? String(req.query.location) : null;
+  const where = { monitor_id: Number(req.params.id), important: true };
+  if (requested !== "all") Object.assign(where, locationFilter(requested || config.primaryLocation));
+  res.json(await prisma.heartbeat.findMany({ where, orderBy: { created_at: "desc" }, take: 50 }));
 });
 
 // Maintenance window milik monitor ini

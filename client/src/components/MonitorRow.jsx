@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import clsx from "clsx";
-import { Wrench } from "lucide-react";
+import { Wrench, Globe2 } from "lucide-react";
 import HeartbeatBar from "./HeartbeatBar.jsx";
 import StatusBadge from "./StatusBadge.jsx";
 import TagChip from "./TagChip.jsx";
@@ -22,6 +22,11 @@ export default function MonitorRow({ m }) {
           {m.in_maintenance && (
             <span className="inline-flex items-center gap-1 text-[10px] text-maint" title={m.maintenance_window?.title}>
               <Wrench size={11} /> {m.maintenance_window?.title}
+            </span>
+          )}
+          {m.location_split && (
+            <span className="inline-flex items-center gap-1 text-[10px] text-pending border border-pending/40 bg-pending/10 rounded px-1.5 py-0.5" title={m.locations?.map((l) => `${l.location}: ${l.status === 1 ? "up" : "down"}`).join(" · ")}>
+              <Globe2 size={11} /> {t("dash.splitBadge")}
             </span>
           )}
           {m.tags?.map((tag) => <TagChip key={tag.id} tag={tag} />)}

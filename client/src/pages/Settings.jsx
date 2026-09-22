@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Download, Languages, Moon, Sun, Laptop, Check } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Download, Languages, Moon, Sun, Laptop, Check, Activity } from "lucide-react";
 import clsx from "clsx";
 import { api, download, setToken } from "../lib/api.js";
 import { useI18n, LANGUAGES } from "../lib/i18n.jsx";
@@ -18,6 +18,12 @@ export default function Settings() {
   const [msg, setMsg] = useState(null);
   const [savedDefault, setSavedDefault] = useState(false);
   const [exportMsg, setExportMsg] = useState(null);
+  const [monitors, setMonitors] = useState([]);
+  const today = new Date().toISOString().slice(0, 10);
+  const weekAgo = new Date(Date.now() - 7 * 86400_000).toISOString().slice(0, 10);
+  const [range, setRange] = useState({ monitorId: "", from: weekAgo, to: today });
+
+  useEffect(() => { api("/monitors").then(setMonitors).catch(() => {}); }, []);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -113,7 +119,43 @@ export default function Settings() {
           )}
         </div>
         {isAdmin && <p className="text-xs text-muted">{t("settings.exportConfigHint")}</p>}
+
+        <div className="border-t border-border pt-4 space-y-3">
+          <h3 className="text-sm font-medium text-fg">{t("settings.exportRange")}</h3>
+          <div className="grid sm:grid-cols-3 gap-3">
+            <div>
+              <label className="label">{t("settings.exportMonitor")}</label>
+              <select className="input" value={range.monitorId} onChange={(e) => setRange({ ...range, monitorId: e.target.value })}>
+                <option value="">{t("settings.exportAllMonitors")}</option>
+                {monitors.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+              </select>
+            </div>
+            <div><label className="label">{t("settings.exportFrom")}</label><input className="input" type="date" value={range.from} max={range.to} onChange={(e) => setRange({ ...range, from: e.target.value })} /></div>
+            <div><label className="label">{t("settings.exportTo")}</label><input className="input" type="date" value={range.to} min={range.from} onChange={(e) => setRange({ ...range, to: e.target.value })} /></div>
+          </div>
+          <button
+            type="button"
+            className="btn-ghost"
+            onClick={() => {
+              const q = new URLSearchParams({ from: range.from, to: `${range.to}T23:59:59`, format: "csv" });
+              if (range.monitorId) q.set("monitorId", range.monitorId);
+              grab(`/export/csv?${q}`);
+            }}
+          >
+            <Download size={14} /> {t("common.download")} CSV
+          </button>
+          <p className="text-xs text-muted">{t("settings.exportRangeHint")}</p>
+        </div>
+
         {exportMsg && <p className="text-sm text-down">{exportMsg}</p>}
+      </section>
+
+      <section className="card p-6 space-y-2">
+        <h2 className="font-medium text-fg flex items-center gap-2"><Activity size={16} className="text-accent" /> {t("settings.metricsTitle")}</h2>
+        <p className="text-sm text-muted">{t("settings.metricsHint", { url: "/metrics" })}</p>
+        <code className="block rounded-lg border border-border bg-bg px-3 py-2 text-xs font-mono text-fg2 overflow-x-auto">
+          curl -H &quot;Authorization: Bearer $METRICS_TOKEN&quot; {window.location.origin}/metrics
+        </code>
       </section>
 
       <form onSubmit={submit} className="card p-6 space-y-4">

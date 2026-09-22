@@ -61,7 +61,13 @@ export default function Dashboard() {
         <StatCard
           label={t("dash.uptime24")}
           value={fmtPct(stats?.uptime_24h)}
-          sub={stats?.open_incidents ? t("dash.openIncidents", { n: stats.open_incidents }) : t("dash.noIncidents")}
+          sub={
+            stats?.location_split
+              ? t("dash.locationSplit", { n: stats.location_split })
+              : stats?.open_incidents
+                ? t("dash.openIncidents", { n: stats.open_incidents })
+                : t("dash.noIncidents")
+          }
           icon={Percent}
           tone="text-fg"
         />

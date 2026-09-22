@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, FlaskConical, Save } from "lucide-react";
+import { ArrowLeft, FlaskConical, Save, Plus, X, ShieldCheck } from "lucide-react";
 import clsx from "clsx";
 import { api } from "../lib/api.js";
 import { useMonitors } from "../lib/monitors.jsx";
@@ -15,12 +15,34 @@ const TYPES = [
   { v: "push", label: "form.typePush", desc: "form.typePushDesc" },
 ];
 
+const OPERATORS = [
+  ["eq", "form.opEq"], ["ne", "form.opNe"], ["gt", "form.opGt"], ["lt", "form.opLt"],
+  ["gte", "form.opGte"], ["lte", "form.opLte"], ["contains", "form.opContains"],
+  ["regex", "form.opRegex"], ["exists", "form.opExists"], ["notexists", "form.opNotexists"],
+];
+const VALUELESS_OPERATORS = new Set(["exists", "notexists"]);
+
 const empty = {
   name: "", type: "http", url: "", hostname: "", port: "", method: "GET",
   interval_seconds: 60, timeout_seconds: 30, max_retries: 1,
   expected_status_codes: "200-299", keyword: "", dns_resolve_type: "A", dns_expected: "",
   push_grace_seconds: 60, check_cert: true,
+  // HTTP lanjutan
+  auth_type: "none", auth_username: "", auth_password: "", auth_token: "",
+  assertion_path: "", assertion_operator: "", assertion_value: "",
   notification_ids: [], tags: [],
+};
+
+// http_headers disimpan sebagai object; form memakai array agar barisnya bisa diurutkan
+const headersToRows = (obj) =>
+  obj && typeof obj === "object" ? Object.entries(obj).map(([key, value]) => ({ key, value: String(value ?? "") })) : [];
+const rowsToHeaders = (rows) => {
+  const out = {};
+  for (const { key, value } of rows) {
+    const name = String(key || "").trim();
+    if (name) out[name] = String(value ?? "");
+  }
+  return out;
 };
 
 export default function MonitorForm() {
@@ -32,6 +54,7 @@ export default function MonitorForm() {
   const [notifs, setNotifs] = useState([]);
   const [allTags, setAllTags] = useState([]);
   const [tagInput, setTagInput] = useState("");
+  const [headerRows, setHeaderRows] = useState([]);
   const [error, setError] = useState("");
   const [test, setTest] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -39,7 +62,22 @@ export default function MonitorForm() {
   useEffect(() => {
     api("/notifications").then(setNotifs).catch(() => {});
     api("/tags").then(setAllTags).catch(() => {});
-    if (id) api(`/monitors/${id}`).then((m) => setForm({ ...empty, ...m, port: m.port ?? "", url: m.url ?? "", hostname: m.hostname ?? "", keyword: m.keyword ?? "", dns_expected: m.dns_expected ?? "" }));
+    if (id)
+      api(`/monitors/${id}`).then((m) => {
+        setForm({
+          ...empty, ...m,
+          port: m.port ?? "", url: m.url ?? "", hostname: m.hostname ?? "",
+          keyword: m.keyword ?? "", dns_expected: m.dns_expected ?? "",
+          auth_type: m.auth_type || "none",
+          auth_username: m.auth_username ?? "",
+          // Password & token tidak pernah dikirim server; kosong = pertahankan yang tersimpan
+          auth_password: "", auth_token: "",
+          assertion_path: m.assertion_path ?? "",
+          assertion_operator: m.assertion_operator ?? "",
+          assertion_value: m.assertion_value ?? "",
+        });
+        setHeaderRows(headersToRows(m.http_headers));
+      });
   }, [id]);
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -53,11 +91,16 @@ export default function MonitorForm() {
   const toggleNotif = (nid) =>
     setForm((f) => ({ ...f, notification_ids: f.notification_ids.includes(nid) ? f.notification_ids.filter((x) => x !== nid) : [...f.notification_ids, nid] }));
 
+  // Bentuk payload untuk server: header jadi object, id disertakan agar
+  // endpoint test bisa memakai kredensial tersimpan.
+  const payload = () => ({ ...form, id: id ? Number(id) : undefined, http_headers: rowsToHeaders(headerRows) });
+
   const submit = async (e) => {
     e.preventDefault();
     setBusy(true); setError("");
     try {
-      const saved = id ? await api(`/monitors/${id}`, { method: "PUT", body: form }) : await api("/monitors", { method: "POST", body: form });
+      const body = payload();
+      const saved = id ? await api(`/monitors/${id}`, { method: "PUT", body }) : await api("/monitors", { method: "POST", body });
       await refresh();
       navigate(`/monitors/${saved.id}`);
     } catch (err) { setError(err.message); } finally { setBusy(false); }
@@ -65,11 +108,18 @@ export default function MonitorForm() {
 
   const runTest = async () => {
     setTest({ loading: true });
-    try { setTest(await api("/monitors/test", { method: "POST", body: form })); }
+    try { setTest(await api("/monitors/test", { method: "POST", body: payload() })); }
     catch (err) { setTest({ ok: false, message: err.message }); }
   };
 
   const isPush = form.type === "push";
+  // Pratinjau ekspresi yang akan dijalankan server, mis. $.status eq "ok"
+  const assertionPreview =
+    form.assertion_path && form.assertion_operator
+      ? VALUELESS_OPERATORS.has(form.assertion_operator)
+        ? `${form.assertion_path} ${form.assertion_operator}`
+        : `${form.assertion_path} ${form.assertion_operator} ${JSON.stringify(form.assertion_value ?? "")}`
+      : null;
   const isHttps = form.type === "http" && /^https:/i.test(form.url || "");
 
   return (
@@ -147,6 +197,88 @@ export default function MonitorForm() {
           </>
         )}
       </section>
+
+      {form.type === "http" && (
+        <section className="card p-6 space-y-6">
+          <h2 className="font-medium text-fg">{t("form.advanced")}</h2>
+
+          <div className="space-y-2">
+            <label className="label">{t("form.headers")}</label>
+            {headerRows.map((row, i) => (
+              <div key={i} className="flex gap-2">
+                <input
+                  className="input font-mono flex-1" placeholder={t("form.headerName")} value={row.key}
+                  onChange={(e) => setHeaderRows((rows) => rows.map((r, x) => (x === i ? { ...r, key: e.target.value } : r)))}
+                />
+                <input
+                  className="input font-mono flex-[2]" placeholder={t("form.headerValue")} value={row.value}
+                  onChange={(e) => setHeaderRows((rows) => rows.map((r, x) => (x === i ? { ...r, value: e.target.value } : r)))}
+                />
+                <button type="button" className="btn-ghost !px-2.5" onClick={() => setHeaderRows((rows) => rows.filter((_, x) => x !== i))}>
+                  <X size={14} />
+                </button>
+              </div>
+            ))}
+            <button type="button" className="btn-ghost !py-1.5" onClick={() => setHeaderRows((rows) => [...rows, { key: "", value: "" }])}>
+              <Plus size={14} /> {t("form.addHeader")}
+            </button>
+            <p className="text-xs text-muted">{t("form.headersHint")}</p>
+          </div>
+
+          <div className="space-y-3">
+            <label className="label">{t("form.auth")}</label>
+            <div className="grid grid-cols-3 gap-2">
+              {[["none", "form.authNone"], ["basic", "form.authBasic"], ["bearer", "form.authBearer"]].map(([v, key]) => (
+                <button
+                  type="button" key={v} onClick={() => setForm((f) => ({ ...f, auth_type: v }))}
+                  className={clsx("rounded-lg border px-3 py-2 text-sm", form.auth_type === v ? "border-accent bg-accent/10 text-accent" : "border-border text-fg2")}
+                >
+                  {t(key)}
+                </button>
+              ))}
+            </div>
+            {form.auth_type === "basic" && (
+              <div className="grid md:grid-cols-2 gap-4">
+                <div><label className="label">{t("form.authUsername")}</label><input className="input" value={form.auth_username} onChange={set("auth_username")} autoComplete="off" /></div>
+                <div><label className="label">{t("form.authPassword")}</label><input className="input" type="password" value={form.auth_password} onChange={set("auth_password")} autoComplete="new-password" placeholder={id ? "••••••••" : ""} /></div>
+              </div>
+            )}
+            {form.auth_type === "bearer" && (
+              <div><label className="label">{t("form.authToken")}</label><input className="input font-mono" type="password" value={form.auth_token} onChange={set("auth_token")} autoComplete="new-password" placeholder={id ? "••••••••" : ""} /></div>
+            )}
+            {form.auth_type !== "none" && (
+              <p className="text-xs text-muted flex items-start gap-1.5">
+                <ShieldCheck size={13} className="mt-0.5 shrink-0 text-up" />
+                {t("form.authStoredHint")}{id ? ` ${t("form.authKeepHint")}` : ""}
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-3">
+            <label className="label">{t("form.assertion")}</label>
+            <div className="grid md:grid-cols-[1fr_170px] gap-2">
+              <input className="input font-mono" placeholder={t("form.assertionPathPlaceholder")} value={form.assertion_path} onChange={set("assertion_path")} />
+              <select className="input" value={form.assertion_operator} onChange={set("assertion_operator")}>
+                <option value="">—</option>
+                {OPERATORS.map(([v, key]) => <option key={v} value={v}>{t(key)}</option>)}
+              </select>
+            </div>
+            {form.assertion_operator && !VALUELESS_OPERATORS.has(form.assertion_operator) && (
+              <input className="input font-mono" placeholder={t("form.assertionValuePlaceholder")} value={form.assertion_value} onChange={set("assertion_value")} />
+            )}
+            {assertionPreview && (
+              <div className="flex items-center gap-2 flex-wrap text-xs">
+                <span className="text-muted">{t("form.assertionPreview")}</span>
+                <code className="rounded bg-panel2 px-2 py-1 font-mono text-fg2">{assertionPreview}</code>
+                <button type="button" className="text-muted hover:text-down" onClick={() => setForm((f) => ({ ...f, assertion_path: "", assertion_operator: "", assertion_value: "" }))}>
+                  {t("form.assertionClear")}
+                </button>
+              </div>
+            )}
+            <p className="text-xs text-muted">{t("form.assertionHint")}</p>
+          </div>
+        </section>
+      )}
 
       <section className="card p-6 space-y-3">
         <h2 className="font-medium text-fg">{t("form.tags")}</h2>
