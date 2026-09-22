@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, FlaskConical, Save, Plus, X, ShieldCheck } from "lucide-react";
+import { ArrowLeft, FlaskConical, Save, Plus, X, ShieldCheck, Zap } from "lucide-react";
 import clsx from "clsx";
 import { api } from "../lib/api.js";
 import { useMonitors } from "../lib/monitors.jsx";
@@ -30,6 +30,9 @@ const empty = {
   // HTTP lanjutan
   auth_type: "none", auth_username: "", auth_password: "", auth_token: "",
   assertion_path: "", assertion_operator: "", assertion_value: "",
+  // Webhook aksi (berlaku untuk semua tipe monitor)
+  action_webhook_url: "", action_webhook_method: "POST",
+  action_on_down: true, action_on_recover: false,
   notification_ids: [], tags: [],
 };
 
@@ -55,6 +58,8 @@ export default function MonitorForm() {
   const [allTags, setAllTags] = useState([]);
   const [tagInput, setTagInput] = useState("");
   const [headerRows, setHeaderRows] = useState([]);
+  const [actionHeaderRows, setActionHeaderRows] = useState([]);
+  const [actionTest, setActionTest] = useState(null);
   const [error, setError] = useState("");
   const [test, setTest] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -77,6 +82,7 @@ export default function MonitorForm() {
           assertion_value: m.assertion_value ?? "",
         });
         setHeaderRows(headersToRows(m.http_headers));
+        setActionHeaderRows(headersToRows(m.action_webhook_headers));
       });
   }, [id]);
 
@@ -93,7 +99,24 @@ export default function MonitorForm() {
 
   // Bentuk payload untuk server: header jadi object, id disertakan agar
   // endpoint test bisa memakai kredensial tersimpan.
-  const payload = () => ({ ...form, id: id ? Number(id) : undefined, http_headers: rowsToHeaders(headerRows) });
+  const payload = () => ({
+    ...form,
+    id: id ? Number(id) : undefined,
+    http_headers: rowsToHeaders(headerRows),
+    action_webhook_headers: rowsToHeaders(actionHeaderRows),
+  });
+
+  // Uji webhook aksi memakai konfigurasi yang TERSIMPAN, jadi monitor harus
+  // disimpan lebih dulu sebelum tombol ini berguna.
+  const runActionTest = async () => {
+    setActionTest({ loading: true });
+    try {
+      const res = await api(`/monitors/${id}/test-action-webhook`, { method: "POST" });
+      setActionTest({ ok: true, ...res });
+    } catch (err) {
+      setActionTest({ ok: false, message: err.message });
+    }
+  };
 
   const submit = async (e) => {
     e.preventDefault();
@@ -279,6 +302,69 @@ export default function MonitorForm() {
           </div>
         </section>
       )}
+
+      <section className="card p-6 space-y-4">
+        <div>
+          <h2 className="font-medium text-fg flex items-center gap-2"><Zap size={15} className="text-accent" /> {t("action.title")}</h2>
+          <p className="text-sm text-muted mt-1">{t("action.subtitle")}</p>
+        </div>
+
+        <div className="grid md:grid-cols-[1fr_120px] gap-4">
+          <div><label className="label">{t("action.url")}</label><input className="input font-mono" value={form.action_webhook_url} onChange={set("action_webhook_url")} placeholder="https://n8n.contoh.com/webhook/restart" /></div>
+          <div><label className="label">{t("action.method")}</label>
+            <select className="input" value={form.action_webhook_method} onChange={set("action_webhook_method")}>
+              {["POST", "GET", "PUT"].map((m) => <option key={m}>{m}</option>)}
+            </select>
+          </div>
+        </div>
+
+        {form.action_webhook_url && (
+          <>
+            <div className="space-y-2">
+              <label className="label">{t("action.headers")}</label>
+              {actionHeaderRows.map((row, i) => (
+                <div key={i} className="flex gap-2">
+                  <input className="input font-mono flex-1" placeholder={t("form.headerName")} value={row.key}
+                    onChange={(e) => setActionHeaderRows((rows) => rows.map((r, x) => (x === i ? { ...r, key: e.target.value } : r)))} />
+                  <input className="input font-mono flex-[2]" placeholder={t("form.headerValue")} value={row.value}
+                    onChange={(e) => setActionHeaderRows((rows) => rows.map((r, x) => (x === i ? { ...r, value: e.target.value } : r)))} />
+                  <button type="button" className="btn-ghost !px-2.5" onClick={() => setActionHeaderRows((rows) => rows.filter((_, x) => x !== i))}><X size={14} /></button>
+                </div>
+              ))}
+              <button type="button" className="btn-ghost !py-1.5" onClick={() => setActionHeaderRows((rows) => [...rows, { key: "", value: "" }])}>
+                <Plus size={14} /> {t("form.addHeader")}
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" className="accent-accent" checked={!!form.action_on_down} onChange={(e) => setForm({ ...form, action_on_down: e.target.checked })} />
+                {t("action.onDown")}
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" className="accent-accent" checked={!!form.action_on_recover} onChange={(e) => setForm({ ...form, action_on_recover: e.target.checked })} />
+                {t("action.onRecover")}
+              </label>
+            </div>
+
+            {id && (
+              <div className="flex items-center gap-3 flex-wrap">
+                <button type="button" className="btn-ghost" onClick={runActionTest} disabled={actionTest?.loading}>
+                  <FlaskConical size={14} /> {actionTest?.loading ? t("action.testing") : t("action.test")}
+                </button>
+                {actionTest && !actionTest.loading && (
+                  <span className={clsx("text-sm", actionTest.ok ? "text-up" : "text-down")}>
+                    {actionTest.ok
+                      ? `${t("action.testOk")} (HTTP ${actionTest.status_code} · ${actionTest.duration_ms} ms)`
+                      : `${t("action.testFail")}: ${actionTest.message || actionTest.error}`}
+                  </span>
+                )}
+              </div>
+            )}
+          </>
+        )}
+        <p className="text-xs text-muted">{t("action.hint")}</p>
+      </section>
 
       <section className="card p-6 space-y-3">
         <h2 className="font-medium text-fg">{t("form.tags")}</h2>

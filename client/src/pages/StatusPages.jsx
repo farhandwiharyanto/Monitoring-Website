@@ -4,10 +4,11 @@ import clsx from "clsx";
 import { api } from "../lib/api.js";
 import { useMonitors } from "../lib/monitors.jsx";
 import { useAuth } from "../lib/auth.jsx";
+import TagChip from "../components/TagChip.jsx";
 import { useI18n } from "../lib/i18n.jsx";
 
 const emptyForm = {
-  title: "", slug: "", description: "", published: true, monitor_ids: [],
+  title: "", slug: "", description: "", published: true, monitor_ids: [], tag_ids: [],
   logo_url: "", accent_color: "#38bdf8", theme: "dark",
   show_uptime: true, show_bars: true, show_incidents: true,
   footer_text: "", announcement: "", announcement_style: "info", custom_domain: "",
@@ -25,9 +26,10 @@ export default function StatusPages() {
   const [editing, setEditing] = useState(null);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(null);
+  const [tags, setTags] = useState([]);
 
   const load = () => api("/status-pages").then(setList);
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); api("/tags").then(setTags).catch(() => {}); }, []);
 
   const save = async (e) => {
     e.preventDefault(); setError("");
@@ -43,6 +45,7 @@ export default function StatusPages() {
     await api(`/status-pages/${p.id}`, { method: "DELETE" }); load();
   };
   const toggle = (id) => setEditing((f) => ({ ...f, monitor_ids: f.monitor_ids.includes(id) ? f.monitor_ids.filter((x) => x !== id) : [...f.monitor_ids, id] }));
+  const toggleTag = (id) => setEditing((f) => ({ ...f, tag_ids: f.tag_ids.includes(id) ? f.tag_ids.filter((x) => x !== id) : [...f.tag_ids, id] }));
   const publicUrl = (p) => (p.custom_domain ? `https://${p.custom_domain}` : `${window.location.origin}/status/${p.slug}`);
   const copy = (p) => { navigator.clipboard.writeText(publicUrl(p)); setCopied(p.id); setTimeout(() => setCopied(null), 1500); };
   const setField = (k, v) => setEditing((f) => ({ ...f, [k]: v }));
@@ -77,12 +80,13 @@ export default function StatusPages() {
                 {p.custom_domain && <p className="text-xs text-muted font-mono mt-0.5">{p.custom_domain}</p>}
                 <p className="text-xs text-muted mt-2">
                   {t("monitors.count", { n: p.monitor_ids.length })}
+                  {(p.tag_ids || []).length > 0 && ` + ${p.tag_ids.length} tag`}
                   {p.announcement && <span className="ml-2 text-pending">· {t("pages.announcement")}</span>}
                 </p>
               </div>
               <div className="flex gap-1.5 shrink-0">
                 <button className="btn-ghost !px-2.5" title={copied === p.id ? t("common.copied") : t("common.copy")} onClick={() => copy(p)}><Copy size={14} className={copied === p.id ? "text-up" : ""} /></button>
-                {isAdmin && <button className="btn-ghost !px-2.5" onClick={() => { setEditing({ ...emptyForm, ...p, logo_url: p.logo_url || "", footer_text: p.footer_text || "", announcement: p.announcement || "", custom_domain: p.custom_domain || "", description: p.description || "" }); setError(""); }}><Pencil size={14} /></button>}
+                {isAdmin && <button className="btn-ghost !px-2.5" onClick={() => { setEditing({ ...emptyForm, ...p, tag_ids: p.tag_ids || [], logo_url: p.logo_url || "", footer_text: p.footer_text || "", announcement: p.announcement || "", custom_domain: p.custom_domain || "", description: p.description || "" }); setError(""); }}><Pencil size={14} /></button>}
                 {isAdmin && <button className="btn-danger !px-2.5" onClick={() => remove(p)}><Trash2 size={14} /></button>}
               </div>
             </div>
@@ -103,6 +107,18 @@ export default function StatusPages() {
               <div><label className="label">{t("pages.slug")}</label><input className="input font-mono" value={editing.slug} onChange={(e) => setField("slug", e.target.value)} placeholder={t("pages.slugPlaceholder")} /></div>
             </div>
             <div><label className="label">{t("pages.description")}</label><textarea className="input" rows={2} value={editing.description || ""} onChange={(e) => setField("description", e.target.value)} /></div>
+
+            {tags.length > 0 && (
+              <div>
+                <label className="label">{t("pages.byTag")}</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {tags.map((tag) => (
+                    <TagChip key={tag.id} tag={tag} active={editing.tag_ids.includes(tag.id)} onClick={() => toggleTag(tag.id)} />
+                  ))}
+                </div>
+                <p className="text-xs text-muted mt-1.5">{t("pages.byTagHint")}</p>
+              </div>
+            )}
 
             <div>
               <label className="label">{t("pages.monitorsShown")}</label>

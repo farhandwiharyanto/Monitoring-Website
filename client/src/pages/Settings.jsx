@@ -6,6 +6,7 @@ import { useI18n, LANGUAGES } from "../lib/i18n.jsx";
 import { useTheme, THEMES } from "../lib/theme.jsx";
 import { useAuth } from "../lib/auth.jsx";
 import { reconnectWithToken } from "../lib/socket.js";
+import ApiKeys from "../components/ApiKeys.jsx";
 
 const THEME_ICONS = { dark: Moon, light: Sun, auto: Laptop };
 const THEME_KEYS = { dark: "settings.themeDark", light: "settings.themeLight", auto: "settings.themeAuto" };
@@ -149,6 +150,8 @@ export default function Settings() {
 
         {exportMsg && <p className="text-sm text-down">{exportMsg}</p>}
       </section>
+
+      {isAdmin && <ApiKeys />}
 
       <section className="card p-6 space-y-2">
         <h2 className="font-medium text-fg flex items-center gap-2"><Activity size={16} className="text-accent" /> {t("settings.metricsTitle")}</h2>

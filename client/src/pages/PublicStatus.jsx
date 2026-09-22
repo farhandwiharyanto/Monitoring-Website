@@ -142,14 +142,30 @@ export default function PublicStatus({ slug: slugProp }) {
             ) : (
               <ul className="card divide-y divide-border">
                 {incidents.map((i, idx) => (
-                  <li key={idx} className="px-5 py-3 flex items-center justify-between gap-3 text-sm">
-                    <div>
-                      <p className="text-fg">{i.monitor}</p>
-                      <p className="text-xs text-muted">{fmtTime(i.started_at)}{i.resolved_at ? ` → ${fmtTime(i.resolved_at)}` : ""}</p>
+                  <li key={idx} className="px-5 py-3 text-sm">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-fg">{i.monitor}</p>
+                        <p className="text-xs text-muted">{fmtTime(i.started_at)}{i.resolved_at ? ` → ${fmtTime(i.resolved_at)}` : ""}</p>
+                      </div>
+                      <span className={clsx("tabular-nums text-xs shrink-0", i.resolved_at ? "text-muted" : "text-down")}>
+                        {i.resolved_at ? fmtDuration(incidentDuration(i)) : t("public.ongoing")}
+                      </span>
                     </div>
-                    <span className={clsx("tabular-nums text-xs", i.resolved_at ? "text-muted" : "text-down")}>
-                      {i.resolved_at ? fmtDuration(incidentDuration(i)) : t("public.ongoing")}
-                    </span>
+                    {/* Kabar manual dari admin — satu-satunya teks incident yang tampil ke publik */}
+                    {(i.updates || []).length > 0 && (
+                      <ul className="mt-2.5 space-y-2 border-l-2 border-accent/30 pl-3">
+                        {i.updates.map((u, ui) => (
+                          <li key={ui}>
+                            <p className="text-xs">
+                              <span className="text-accent font-medium">{t(`incident.status${u.status.charAt(0).toUpperCase()}${u.status.slice(1)}`)}</span>
+                              <span className="text-muted"> · {fmtTime(u.created_at)}</span>
+                            </p>
+                            <p className="text-sm text-fg2">{u.message}</p>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </li>
                 ))}
               </ul>

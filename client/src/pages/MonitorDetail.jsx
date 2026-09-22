@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { Pencil, Trash2, Pause, Play, ArrowLeft, ExternalLink, Wrench, Plus, ShieldCheck, ShieldAlert, RefreshCw, Copy, Download, Webhook, Globe2, CheckCircle2, XCircle, AlertTriangle } from "lucide-react";
+import { Pencil, Trash2, Pause, Play, ArrowLeft, ExternalLink, Wrench, Plus, ShieldCheck, ShieldAlert, RefreshCw, Copy, Download, Webhook, Globe2, CheckCircle2, XCircle, AlertTriangle, Zap, Bot, MessageSquarePlus, X } from "lucide-react";
 import clsx from "clsx";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { api, download } from "../lib/api.js";
@@ -37,6 +37,9 @@ export default function MonitorDetail() {
   const [locationView, setLocationView] = useState("");
   const [error, setError] = useState("");
   const [certBusy, setCertBusy] = useState(false);
+  const [autoEvents, setAutoEvents] = useState([]);
+  const [webhookLogs, setWebhookLogs] = useState([]);
+  const [updateForm, setUpdateForm] = useState(null); // { incidentId, status, message }
   const [copied, setCopied] = useState(false);
 
   const load = () =>
@@ -46,8 +49,17 @@ export default function MonitorDetail() {
       api(`/monitors/${id}/incidents`),
       api(`/monitors/${id}/events${locationView ? `?location=${encodeURIComponent(locationView)}` : ""}`),
       api(`/monitors/${id}/maintenance`),
+      api(`/monitors/${id}/events-log`).catch(() => []),
+      // Riwayat webhook admin-only; viewer cukup dapat daftar kosong
+      isAdmin ? api(`/monitors/${id}/webhook-logs`).catch(() => []) : Promise.resolve([]),
+      api(`/incidents?monitor_id=${id}&limit=100`).catch(() => []),
     ])
-      .then(([m, b, i, e, w]) => { setMonitor(m); setBeats(b); setIncidents(i); setEvents(e); setWindows(w); })
+      .then(([m, b, i, e, w, ev, wl, inc]) => {
+        setMonitor(m); setBeats(b); setEvents(e); setWindows(w);
+        setAutoEvents(ev); setWebhookLogs(wl);
+        // Pakai incident yang sudah membawa updates; fallback ke daftar polos
+        setIncidents(Array.isArray(inc) && inc.length ? inc : i);
+      })
       .catch((e) => setError(e.message));
 
   useEffect(() => { load(); }, [id, hours, locationView]); // eslint-disable-line
@@ -61,8 +73,13 @@ export default function MonitorDetail() {
       setBeats((prev) => [...prev, heartbeat]);
       if (heartbeat.important) { api(`/monitors/${id}/incidents`).then(setIncidents); api(`/monitors/${id}/events`).then(setEvents); }
     };
+    const onEvent = ({ monitorId, event }) => {
+      if (monitorId !== Number(id)) return;
+      setAutoEvents((prev) => [event, ...prev].slice(0, 50));
+    };
     socket.on("heartbeat", onBeat);
-    return () => socket.off("heartbeat", onBeat);
+    socket.on("monitor:event", onEvent);
+    return () => { socket.off("heartbeat", onBeat); socket.off("monitor:event", onEvent); };
   }, [id]);
 
   const chartData = useMemo(
@@ -87,6 +104,23 @@ export default function MonitorDetail() {
     if (!confirm(t("detail.pushResetConfirm"))) return;
     await act("reset-push-token");
   };
+  const saveUpdate = async (e) => {
+    e.preventDefault();
+    try {
+      await api(`/incidents/${updateForm.incidentId}/updates`, {
+        method: "POST",
+        body: { status: updateForm.status, message: updateForm.message },
+      });
+      setUpdateForm(null);
+      await load();
+    } catch (err) { setError(err.message); }
+  };
+  const removeUpdate = async (incidentId, updateId) => {
+    if (!confirm(t("incident.deleteConfirm"))) return;
+    await api(`/incidents/${incidentId}/updates/${updateId}`, { method: "DELETE" }).catch(() => {});
+    await load();
+  };
+
   const copyPush = () => {
     navigator.clipboard.writeText(monitor.push_url);
     setCopied(true);
@@ -347,10 +381,36 @@ export default function MonitorDetail() {
               </thead>
               <tbody>
                 {incidents.map((inc) => (
-                  <tr key={inc.id} className="border-b border-border last:border-0">
+                  <tr key={inc.id} className="border-b border-border last:border-0 align-top">
                     <td className="px-5 py-2.5">
                       <p className="text-fg2">{fmtTime(inc.started_at)}</p>
                       <p className="text-xs text-muted truncate max-w-[220px]" title={inc.cause}>{inc.cause}</p>
+                      {/* Kabar manual yang tampil di status page publik */}
+                      {(inc.updates || []).length > 0 && (
+                        <ul className="mt-2 space-y-1 border-l-2 border-accent/30 pl-2.5">
+                          {inc.updates.map((u) => (
+                            <li key={u.id} className="text-xs">
+                              <span className="text-accent">{t(`incident.status${u.status.charAt(0).toUpperCase()}${u.status.slice(1)}`)}</span>
+                              <span className="text-muted"> · {fmtTime(u.created_at)}</span>
+                              {isAdmin && (
+                                <button type="button" className="ml-1.5 text-muted hover:text-down align-middle" onClick={() => removeUpdate(inc.id, u.id)}>
+                                  <X size={11} />
+                                </button>
+                              )}
+                              <p className="text-fg2">{u.message}</p>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      {isAdmin && (
+                        <button
+                          type="button"
+                          className="mt-2 inline-flex items-center gap-1 text-xs text-muted hover:text-accent"
+                          onClick={() => setUpdateForm({ incidentId: inc.id, status: "investigating", message: "" })}
+                        >
+                          <MessageSquarePlus size={12} /> {t("incident.addUpdate")}
+                        </button>
+                      )}
                     </td>
                     <td className="px-3 py-2.5">{inc.resolved_at ? <span className="text-up">{fmtTime(inc.resolved_at)}</span> : <span className="text-down pulse-dot">{t("detail.stillDown")}</span>}</td>
                     <td className="px-5 py-2.5 text-right tabular-nums">{fmtDuration(incidentDuration(inc))}</td>
@@ -385,6 +445,66 @@ export default function MonitorDetail() {
         </div>
       </div>
 
+      {(autoEvents.length > 0 || monitor.action_webhook_url) && (
+        <div className="grid lg:grid-cols-2 gap-4">
+          <div className="card">
+            <h2 className="font-medium text-fg px-5 py-4 border-b border-border flex items-center gap-2">
+              <Bot size={15} className="text-accent" /> {t("action.events")}
+            </h2>
+            {autoEvents.length === 0 ? (
+              <div className="p-6 space-y-2">
+                <p className="text-sm text-muted">{t("action.noEvents")}</p>
+                <code className="block text-xs font-mono text-muted break-all">{t("action.eventsHint", { id: monitor.id })}</code>
+              </div>
+            ) : (
+              <ul className="divide-y divide-border max-h-96 overflow-y-auto">
+                {autoEvents.map((e) => (
+                  <li key={e.id} className="px-5 py-3">
+                    <p className="text-sm text-fg2">{e.title}</p>
+                    <p className="text-xs text-muted">
+                      {fmtTime(e.created_at)}
+                      {e.source && ` · ${t("action.fromSource", { source: e.source })}`}
+                      {e.incident_id && ` · incident #${e.incident_id}`}
+                    </p>
+                    {e.message && <p className="text-xs text-fg3 mt-0.5">{e.message}</p>}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {isAdmin && (
+            <div className="card">
+              <h2 className="font-medium text-fg px-5 py-4 border-b border-border flex items-center gap-2">
+                <Zap size={15} className="text-accent" /> {t("action.logs")}
+              </h2>
+              {webhookLogs.length === 0 ? (
+                <p className="p-6 text-sm text-muted">{t("action.noLogs")}</p>
+              ) : (
+                <ul className="divide-y divide-border max-h-96 overflow-y-auto">
+                  {webhookLogs.map((w) => (
+                    <li key={w.id} className="px-5 py-3 flex items-center gap-3">
+                      {w.ok ? <CheckCircle2 size={15} className="text-up shrink-0" /> : <XCircle size={15} className="text-down shrink-0" />}
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm text-fg2">
+                          {w.event} · {t("action.attempt", { n: w.attempt })} · {w.ok ? t("action.logOk") : t("action.logFail")}
+                        </p>
+                        <p className="text-xs text-muted truncate">
+                          {fmtTime(w.created_at)}
+                          {w.status_code ? ` · HTTP ${w.status_code}` : ""}
+                          {w.duration_ms != null ? ` · ${w.duration_ms} ms` : ""}
+                          {w.error ? ` · ${w.error}` : ""}
+                        </p>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="card">
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">
           <h2 className="font-medium text-fg flex items-center gap-2"><Wrench size={15} className="text-muted" /> {t("detail.maintenanceWindows")}</h2>
@@ -411,6 +531,34 @@ export default function MonitorDetail() {
           </ul>
         )}
       </div>
+
+      {updateForm && (
+        <div className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm grid place-items-center p-4" onClick={() => setUpdateForm(null)}>
+          <form onSubmit={saveUpdate} onClick={(e) => e.stopPropagation()} className="card w-full max-w-lg p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="font-medium text-fg">{t("incident.addUpdate")}</h2>
+              <button type="button" onClick={() => setUpdateForm(null)} className="text-muted hover:text-fg"><X size={18} /></button>
+            </div>
+            <div>
+              <label className="label">{t("incident.selectIncident")} #{updateForm.incidentId}</label>
+              <div className="grid grid-cols-2 gap-2">
+                {[["investigating", "incident.statusInvestigating"], ["identified", "incident.statusIdentified"],
+                  ["monitoring", "incident.statusMonitoring"], ["resolved", "incident.statusResolved"]].map(([v, key]) => (
+                  <button type="button" key={v} onClick={() => setUpdateForm({ ...updateForm, status: v })}
+                    className={clsx("rounded-lg border px-3 py-2 text-sm", updateForm.status === v ? "border-accent bg-accent/10 text-accent" : "border-border text-fg2")}>
+                    {t(key)}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <textarea className="input" rows={3} value={updateForm.message} required autoFocus
+              placeholder={t("incident.messagePlaceholder")}
+              onChange={(e) => setUpdateForm({ ...updateForm, message: e.target.value })} />
+            <p className="text-xs text-muted">{t("incident.publishedHint")}</p>
+            <button className="btn-primary">{t("common.save")}</button>
+          </form>
+        </div>
+      )}
 
       {maintForm && (
         <MaintenanceForm initial={maintForm} monitors={monitors} onClose={() => setMaintForm(null)} onSaved={() => { setMaintForm(null); load(); refresh(); }} />

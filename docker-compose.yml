@@ -46,6 +46,9 @@ services:
       PRIMARY_LOCATION: ${PRIMARY_LOCATION:-primary}
       # Token scrape Prometheus (kosong = hanya token login yang diterima)
       METRICS_TOKEN: ${METRICS_TOKEN:-}
+      # Rate limit API key & webhook aksi
+      API_KEY_RATE_LIMIT: ${API_KEY_RATE_LIMIT:-60}
+      ACTION_WEBHOOK_ATTEMPTS: ${ACTION_WEBHOOK_ATTEMPTS:-3}
     volumes:
       # Opsional: taruh file SQLite lama di ./legacy/ untuk dimigrasi
       # docker compose exec pulsewatch npm run migrate:sqlite -- /legacy/pulsewatch.db

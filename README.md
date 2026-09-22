@@ -19,6 +19,13 @@ Self-hosted uptime monitoring — alternatif ringan dari Uptime Kuma.
   Hasil assertion tersimpan di log heartbeat untuk penelusuran.
 - **Prometheus exporter** di `/metrics` — status, response time, uptime ratio, sisa umur
   sertifikat, dan metrik per lokasi, siap di-scrape Grafana
+- **API key** dengan scope read-only / read-write untuk akses programatik dari sistem lain,
+  disimpan hashed dan dibatasi rate limit per kunci
+- **Webhook dua arah**: outbound untuk memicu otomasi (restart service, buka ticket) lengkap
+  dengan retry dan log panggilan, serta inbound agar Ansible/n8n bisa melapor balik ke
+  timeline monitor
+- **Incident update manual** yang tampil di status page publik ("Tim sedang investigasi",
+  "Sudah teratasi") untuk berkomunikasi ke pengguna selama gangguan
 - Interval, timeout, dan retries per monitor (pending → down setelah retries habis)
 - Dashboard: up/down/pending/maintenance, rata-rata respons, uptime 24 jam, filter per tag
 - Heartbeat bar 20 ping terakhir, uptime 24 jam & 30 hari, update realtime via Socket.io
@@ -85,6 +92,10 @@ Semua opsional kecuali yang ditandai. Daftar lengkap ada di `.env.example`.
 | `METRICS_TOKEN` | – | Token scrape `/metrics`. Kosong = hanya token login yang diterima |
 | `METRICS_PUBLIC` | `false` | `true` membuka `/metrics` tanpa auth |
 | `ENCRYPTION_KEY` | dari `JWT_SECRET` | Kunci enkripsi kredensial monitor — lihat catatan di bawah |
+| `API_KEY_RATE_LIMIT` | `60` | Maksimal request per jendela waktu, per API key |
+| `API_KEY_RATE_WINDOW_SECONDS` | `60` | Panjang jendela rate limit API key |
+| `ACTION_WEBHOOK_ATTEMPTS` | `3` | Percobaan pemanggilan webhook aksi (termasuk yang pertama) |
+| `ACTION_WEBHOOK_TIMEOUT_SECONDS` | `15` | Timeout tiap pemanggilan webhook aksi |
 
 > **Kredensial monitor:** Basic Auth dan Bearer token milik monitor disimpan terenkripsi
 > AES-256-GCM. Kuncinya diturunkan dari `JWT_SECRET` bila `ENCRYPTION_KEY` kosong, jadi
@@ -289,9 +300,243 @@ curl -H "Authorization: Bearer $TOKEN" \
   -o uptime-september.csv
 ```
 
+## API key
+
+Untuk dipakai sistem lain — platform low-code internal, script, dashboard pihak ketiga —
+tanpa membagikan password akun.
+
+Buat dari **Pengaturan → API key**. Kunci penuh hanya ditampilkan **sekali** saat dibuat;
+database menyimpan SHA-256-nya saja, jadi kunci yang hilang tidak bisa dipulihkan — cabut
+lalu buat yang baru.
+
+| Scope | Boleh |
+|---|---|
+| `read` | Hanya `GET`. Setara role viewer |
+| `write` | Semua method. Setara role admin pada endpoint yang diizinkan |
+
+Kunci dikirim persis seperti token login:
+
+```bash
+export PULSEWATCH_KEY="pw_xxxxxxxx…"
+
+# Daftar monitor
+curl -H "Authorization: Bearer $PULSEWATCH_KEY" \
+  https://pulsewatch.contoh.com/api/monitors
+
+# Ringkasan dashboard
+curl -H "Authorization: Bearer $PULSEWATCH_KEY" \
+  https://pulsewatch.contoh.com/api/monitors/stats
+
+# Riwayat heartbeat 24 jam terakhir
+curl -H "Authorization: Bearer $PULSEWATCH_KEY" \
+  "https://pulsewatch.contoh.com/api/monitors/3/heartbeats?hours=24"
+
+# Status publik sebuah status page (tidak butuh kunci sama sekali)
+curl https://pulsewatch.contoh.com/api/public/status/internal-platform
+
+# Membuat monitor — butuh scope write
+curl -X POST -H "Authorization: Bearer $PULSEWATCH_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"API baru","type":"http","url":"https://api.contoh.com/health","interval_seconds":60}' \
+  https://pulsewatch.contoh.com/api/monitors
+```
+
+**Batasan yang sengaja dipasang:**
+
+- Kunci `read` yang memakai method selain `GET` mendapat `403 API key ini read-only`.
+- `/api/users`, `/api/api-keys`, dan `/api/notifications` **tidak bisa** diakses API key sama
+  sekali, apa pun scope-nya. Tanpa batas ini, satu kunci read-write bisa membuat kunci lain,
+  membuat user admin, atau membaca kredensial notifikasi.
+- Rate limit `API_KEY_RATE_LIMIT` request per `API_KEY_RATE_WINDOW_SECONDS` per kunci.
+  Setiap respons membawa `X-RateLimit-Limit` dan `X-RateLimit-Remaining`; saat terlampaui
+  balasannya `429` dengan header `Retry-After`.
+
+```bash
+$ curl -i -H "Authorization: Bearer $PULSEWATCH_KEY" .../api/monitors/stats
+HTTP/1.1 429 Too Many Requests
+Retry-After: 50
+X-RateLimit-Limit: 60
+X-RateLimit-Remaining: 0
+
+{"error":"Rate limit API key terlampaui, coba lagi dalam 50 detik."}
+```
+
+Mencabut kunci berlaku seketika — request berikutnya langsung ditolak.
+
+## Webhook dua arah
+
+### Outbound: memicu otomasi
+
+Diatur per monitor di bagian **Webhook aksi** pada form Add/Edit Monitor. Berbeda dari
+notifikasi: notifikasi memberi kabar ke manusia, webhook aksi **menjalankan sesuatu**.
+
+Payload yang dikirim:
+
+```json
+{
+  "event": "monitor.down",
+  "triggered_at": "2026-09-23T02:10:01.000Z",
+  "monitor": { "id": 2, "name": "Backend API", "type": "http",
+               "target": "https://api.contoh.com/health", "interval_seconds": 60 },
+  "incident": { "id": 12, "started_at": "2026-09-23T02:10:01.000Z", "cause": "ECONNREFUSED" },
+  "heartbeat": { "status": 0, "message": "ECONNREFUSED", "response_time": null,
+                 "created_at": "2026-09-23T02:10:01.000Z" },
+  "callback": "https://pulsewatch.contoh.com/api/webhook/trigger/2"
+}
+```
+
+Pemanggilan yang gagal diulang otomatis (1 detik, lalu 3 detik — atur lewat
+`ACTION_WEBHOOK_ATTEMPTS`). **Setiap percobaan** tercatat di halaman detail monitor,
+bagian *Riwayat panggilan webhook*, lengkap dengan status code, durasi, dan pesan error.
+Tombol **Uji webhook** memanggilnya sekarang juga tanpa menunggu monitor benar-benar down.
+
+### Inbound: melapor balik
+
+Setelah otomasi selesai, panggil `callback` di atas supaya tercatat pada timeline monitor:
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer $PULSEWATCH_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+        "source": "ansible",
+        "title": "Service di-restart otomatis",
+        "message": "playbook restart-service.yml selesai, exit code 0",
+        "host": "app-01"
+      }' \
+  https://pulsewatch.contoh.com/api/webhook/trigger/2
+```
+
+Butuh API key scope **write** (atau admin yang login). Event otomatis ditautkan ke incident
+yang sedang terbuka, lalu muncul di *Timeline otomasi* pada halaman detail monitor.
+
+Ini **bukan** heartbeat: status dan uptime monitor tidak berubah karenanya. Untuk melaporkan
+hidup/matinya sebuah target, pakai [monitor push](#push-monitor).
+
+Contoh potongan playbook Ansible:
+
+```yaml
+- name: Restart service
+  ansible.builtin.systemd:
+    name: backend
+    state: restarted
+
+- name: Lapor ke Pulsewatch
+  ansible.builtin.uri:
+    url: "https://pulsewatch.contoh.com/api/webhook/trigger/2"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ pulsewatch_api_key }}"
+    body_format: json
+    body:
+      source: ansible
+      title: "Service di-restart otomatis"
+      message: "playbook {{ ansible_play_name }} selesai"
+
+## Status page publik
+
+Buat dari menu **Status Pages**. Monitor bisa dipilih dua cara dan keduanya digabung:
+
+- **Lewat tag/group** — semua monitor bertag itu ikut tampil, termasuk yang ditambahkan nanti.
+- **Satu per satu** — tampil lebih dulu, sesuai urutan pilihannya.
+
+Halaman diakses tanpa login lewat `/status/<slug>` atau lewat custom domain.
+
+### Yang TIDAK ikut tampil ke publik
+
+Payload publik sengaja dibatasi. URL asli, hostname, port, konfigurasi check (interval,
+timeout, expected status code, keyword, assertion), kredensial, push token, pesan heartbeat,
+dan penyebab teknis incident **tidak** disertakan. Yang tampil hanya nama monitor, tipe,
+status, uptime, heartbeat bar, waktu incident, dan kabar yang ditulis admin.
+
+### Incident update
+
+Selama gangguan, admin bisa menulis kabar dari halaman detail monitor (tombol **Tulis kabar**
+pada baris incident). Tersedia empat status: *Sedang diperiksa*, *Penyebab ditemukan*,
+*Sedang dipantau*, dan *Sudah teratasi*.
+
+Kabar ini murni untuk komunikasi — status incident sendiri tetap ditentukan heartbeat, jadi
+menulis "Sudah teratasi" tidak menutup incident bila monitornya masih down.
+
+Lewat API:
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"status":"investigating","message":"Tim sedang investigasi, perkiraan pulih 30 menit"}' \
+  https://pulsewatch.contoh.com/api/incidents/12/updates
+```
+
 ## Custom domain untuk status page
-Isi field *Custom domain* pada status page, lalu arahkan CNAME domain tersebut ke Pulsewatch.
-Saat domain itu dibuka di root (`/`), Pulsewatch otomatis menampilkan status page yang cocok.
+
+Isi field *Custom domain* pada status page, lalu arahkan domain itu ke Pulsewatch. Saat
+domain dibuka di root (`/`), Pulsewatch mencocokkan host dengan status page dan langsung
+menampilkannya.
+
+**Set `TRUST_PROXY=true`** bila Pulsewatch berada di belakang reverse proxy. Tanpa itu,
+header `X-Forwarded-Host` sengaja diabaikan supaya tidak bisa dipalsukan klien yang menembak
+Pulsewatch langsung.
+
+### nginx
+
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name status.contoh.com;
+
+    ssl_certificate     /etc/letsencrypt/live/status.contoh.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/status.contoh.com/privkey.pem;
+
+    location / {
+        proxy_pass http://127.0.0.1:3001;
+
+        # Host asli inilah yang dipakai Pulsewatch memilih status page
+        proxy_set_header Host              $host;
+        proxy_set_header X-Forwarded-Host  $host;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Socket.io butuh upgrade websocket agar status page ikut realtime
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade    $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
+```
+
+### Traefik (label docker-compose)
+
+```yaml
+services:
+  pulsewatch:
+    labels:
+      - "traefik.enable=true"
+      # Dashboard admin
+      - "traefik.http.routers.pulsewatch.rule=Host(`pulsewatch.contoh.com`)"
+      - "traefik.http.routers.pulsewatch.entrypoints=websecure"
+      - "traefik.http.routers.pulsewatch.tls.certresolver=letsencrypt"
+      # Status page publik di domain sendiri, diarahkan ke service yang sama
+      - "traefik.http.routers.pulsewatch-status.rule=Host(`status.contoh.com`)"
+      - "traefik.http.routers.pulsewatch-status.entrypoints=websecure"
+      - "traefik.http.routers.pulsewatch-status.tls.certresolver=letsencrypt"
+      - "traefik.http.services.pulsewatch.loadbalancer.server.port=3001"
+```
+
+Traefik meneruskan `X-Forwarded-Host` secara bawaan, jadi cukup pastikan `TRUST_PROXY=true`
+di environment Pulsewatch.
+
+### DNS
+
+Arahkan `status.contoh.com` ke server yang sama — `CNAME` ke host Pulsewatch, atau `A`/`AAAA`
+ke IP-nya. Satu domain hanya boleh dipakai satu status page; domain yang sudah terpakai
+ditolak saat disimpan.
+
+Memastikan pemetaannya benar:
+
+```bash
+curl -H "X-Forwarded-Host: status.contoh.com" \
+  https://pulsewatch.contoh.com/api/public/status/resolve
+# {"slug":"internal-platform"}
+```
 
 ## Struktur
 ```
@@ -306,6 +551,8 @@ server/
   src/scheduler.js          node-cron tick 1s → check, retry, incident, push freshness,
                             label lokasi, dan alert sertifikat berjenjang
   src/lib/auth.js           JWT + requireAuth / requireAdmin (RBAC) + pembatalan token
+  src/lib/apikey.js         pembuatan, hashing, dan rate limit API key
+  src/lib/actionWebhook.js  webhook aksi keluar: retry + pencatatan tiap percobaan
   src/lib/crypto.js         enkripsi AES-256-GCM untuk kredensial monitor
   src/lib/assertion.js      subset JSONPath + evaluasi body assertion
   src/lib/ratelimit.js      rate limit login & endpoint publik
@@ -315,12 +562,13 @@ server/
   src/checks/               http (header/auth/assertion), tcp, ping, dns, cert
   src/notifications/        telegram, discord, slack, googlechat, ntfy, email, webhook
   src/routes/               auth, users, monitors, tags, maintenance, notifications,
-                            statusPages (+ public), push, settings, export, metrics
+                            statusPages (+ public), push, settings, export, metrics,
+                            apiKeys, webhook (inbound), incidents (update publik)
 client/src/
   pages/        Dashboard, Monitors (grouped), MonitorDetail, MonitorForm, Maintenance, Users,
                 Notifications, StatusPages, PublicStatus, Login, Settings
   components/   Layout, HeartbeatBar, MonitorRow, StatCard, StatusBadge, TagChip, TagFilter,
-                MaintenanceForm, ThemeToggle
+                MaintenanceForm, ThemeToggle, ApiKeys
   lib/          api (+ download), socket, auth (role context), monitors (realtime context),
                 format, i18n (id/en), theme (gelap/terang/auto + warna grafik)
 ```
@@ -356,13 +604,24 @@ client/src/
 | GET | /api/export/monitors · /heartbeats · /incidents | any | `?format=csv\|json` |
 | GET | /api/export/config | admin | backup JSON tanpa kredensial |
 | GET | /metrics | token scrape / login | exposisi Prometheus |
+| GET/POST | /api/api-keys | admin (login) | daftar & buat API key; kunci penuh sekali saja |
+| POST | /api/api-keys/:id/revoke · DELETE /api/api-keys/:id | admin (login) | cabut / hapus |
+| POST | /api/webhook/trigger/:monitorId | write | catat laporan otomasi di timeline monitor |
+| GET | /api/webhook/events/:monitorId | any | timeline event monitor |
+| GET | /api/monitors/:id/events-log · /webhook-logs | any / admin | event otomasi & log webhook aksi |
+| POST | /api/monitors/:id/test-action-webhook | admin | panggil webhook aksi sekarang juga |
+| GET | /api/incidents?open=&monitor_id= | any | incident beserta update-nya |
+| CRUD | /api/incidents/:id/updates | admin | kabar publik selama incident |
 
 Status monitor: `0` down · `1` up · `2` pending · `3` paused · `4` maintenance.
 Heartbeat punya flag `maintenance`, kolom `location`, serta `assertion_ok` / `assertion_message`.
 Endpoint mengubah data mengembalikan `403` untuk role `viewer`.
 
-Seluruh endpoint Phase 1–2 tetap sama bentuknya; field baru hanya ditambahkan, tidak ada yang dihapus
+Seluruh endpoint Phase 1–3 tetap sama bentuknya; field baru hanya ditambahkan, tidak ada yang dihapus
 atau diubah arti.
+
+Endpoint ber-auth menerima **token login maupun API key** lewat header yang sama, kecuali
+`/api/users`, `/api/api-keys`, dan `/api/notifications` yang hanya untuk manusia yang login.
 
 ## Catatan
 
@@ -375,3 +634,10 @@ dan diperlakukan sebagai milik lokasi primary, sehingga grafik dan uptime lama t
 
 **Assertion butuh body JSON.** Bila response bukan JSON yang valid, assertion dihitung gagal dengan
 pesan yang menjelaskan hal itu. Untuk mencocokkan teks biasa, pakai field *Keyword di body*.
+
+**API key hilang tidak bisa dipulihkan.** Database hanya menyimpan hash-nya. Cabut kunci lama
+lalu buat yang baru.
+
+**Rate limit API key bersifat per proses.** Hitungannya disimpan di memori instance, jadi kalau
+suatu saat Pulsewatch dijalankan lebih dari satu replika di belakang load balancer, tiap replika
+punya hitungannya sendiri.
