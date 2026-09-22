@@ -6,9 +6,11 @@ export const prisma = new PrismaClient();
 
 export const ROLES = ["admin", "viewer"];
 
-// Seed admin pertama kali (hanya jika tabel users kosong)
-export async function initDb() {
+// Seed admin pertama kali (hanya jika tabel users kosong).
+// Worker multi-location memakai seedAdmin:false — DB-nya sudah disiapkan instance web.
+export async function initDb({ seedAdmin = true } = {}) {
   await prisma.$connect();
+  if (!seedAdmin) return;
   const count = await prisma.user.count();
   if (count === 0) {
     await prisma.user.create({

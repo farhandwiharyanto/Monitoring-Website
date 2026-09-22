@@ -3,7 +3,7 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import { Server } from "socket.io";
-import { config, allowedOrigins } from "./config.js";
+import { config, allowedOrigins, isPrimaryLocation } from "./config.js";
 import { initDb } from "./db.js";
 import { userFromToken } from "./lib/auth.js";
 import { securityHeaders, corsPolicy } from "./lib/security.js";
@@ -18,7 +18,22 @@ import { maintenanceRouter } from "./routes/maintenance.js";
 import { pushRouter } from "./routes/push.js";
 import { settingsRouter } from "./routes/settings.js";
 import { exportRouter } from "./routes/export.js";
+import { metricsRouter } from "./routes/metrics.js";
 
+// Mode worker (WORKER_ONLY=true): hanya menjalankan scheduler dan menulis
+// heartbeat berlabel LOCATION_NAME ke database yang sama. Tidak membuka HTTP.
+if (config.workerOnly) {
+  await initDb({ seedAdmin: false });
+  initScheduler(null);
+  console.log(`[pulsewatch] worker berjalan — lokasi "${config.locationName}" (primary: ${config.primaryLocation})`);
+  if (isPrimaryLocation()) {
+    console.warn("[pulsewatch] PERHATIAN: worker memakai nama lokasi yang sama dengan primary — set LOCATION_NAME ke nama lain.");
+  }
+} else {
+  await startServer();
+}
+
+async function startServer() {
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: allowedOrigins(), credentials: true } });
@@ -41,6 +56,8 @@ app.use("/api/public/status", publicStatusRouter);
 app.use("/api/push", pushRouter);
 app.use("/api/settings", settingsRouter);
 app.use("/api/export", exportRouter);
+// Prometheus meng-scrape /metrics (di luar /api agar konfigurasinya lazim)
+app.use("/metrics", metricsRouter);
 app.use("/api/tags", tagsRouter);
 app.use("/api/maintenance", maintenanceRouter);
 
@@ -75,5 +92,10 @@ app.use((err, req, res, next) => {
 });
 
 await initDb();
+// Instance web juga menjalankan scheduler untuk lokasinya sendiri
 initScheduler(io);
-server.listen(config.port, () => console.log(`[pulsewatch] http://localhost:${config.port}`));
+server.listen(config.port, () => {
+  console.log(`[pulsewatch] http://localhost:${config.port}`);
+  console.log(`[pulsewatch] lokasi "${config.locationName}"${isPrimaryLocation() ? " (primary)" : ` — primary: ${config.primaryLocation}`}`);
+});
+}

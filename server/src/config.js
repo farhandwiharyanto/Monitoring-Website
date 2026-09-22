@@ -43,11 +43,40 @@ export const config = {
   loginWindowSeconds: Number(process.env.LOGIN_WINDOW_SECONDS || 300),
   loginLockSeconds: Number(process.env.LOGIN_LOCK_SECONDS || 900),
 
-  // Peringatan sertifikat TLS: kirim notifikasi saat sisa umur <= nilai ini (hari).
+  // Ambang peringatan sertifikat TLS (hari). Alert dikirim sekali per ambang
+  // yang dilewati, lalu direset saat sertifikat diperbarui.
+  certAlertThresholds: list(process.env.CERT_ALERT_THRESHOLDS || "30,14,7,3")
+    .map(Number)
+    .filter((n) => Number.isFinite(n) && n > 0)
+    .sort((a, b) => b - a),
+  // Handshake TLS mahal, jadi sertifikat tidak diperiksa tiap interval check.
+  certCheckIntervalHours: Number(process.env.CERT_CHECK_INTERVAL_HOURS || 6),
+  // Ambang badge "warning" di UI (hari)
   certExpiryWarnDays: Number(process.env.CERT_EXPIRY_WARN_DAYS || 14),
+
+  // --- Multi-location ---
+  // Nama lokasi agen ini. Semua heartbeat yang ditulis instance ini diberi label ini.
+  locationName: (process.env.LOCATION_NAME || "primary").trim().slice(0, 40),
+  // Lokasi yang jadi acuan status, uptime, incident, dan alert. Lokasi lain
+  // hanya merekam heartbeat untuk perbandingan.
+  primaryLocation: (process.env.PRIMARY_LOCATION || "primary").trim().slice(0, 40),
+  // Mode worker: hanya menjalankan scheduler, tanpa API/UI.
+  workerOnly: bool(process.env.WORKER_ONLY, false),
+
+  // --- Prometheus ---
+  // Token scrape untuk /metrics. Kosong + METRICS_PUBLIC=false → hanya JWT yang diterima.
+  metricsToken: process.env.METRICS_TOKEN || "",
+  metricsPublic: bool(process.env.METRICS_PUBLIC, false),
+
+  // Kunci enkripsi kredensial monitor (auth header). Bila kosong, diturunkan
+  // dari JWT_SECRET — mengganti JWT_SECRET berarti kredensial lama tidak terbaca.
+  encryptionKey: process.env.ENCRYPTION_KEY || "",
   // Retensi heartbeat (hari) — dibersihkan tiap hari jam 03:00.
   heartbeatRetentionDays: Number(process.env.HEARTBEAT_RETENTION_DAYS || 90),
 };
+
+// Instance ini yang memegang keputusan status/incident/alert?
+export const isPrimaryLocation = () => config.locationName === config.primaryLocation;
 
 // Origin yang diizinkan untuk API ber-auth & Socket.io.
 export function allowedOrigins() {

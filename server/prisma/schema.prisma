@@ -46,10 +46,27 @@ model Monitor {
   push_grace_seconds    Int      @default(60)
 
   // Sertifikat TLS (monitor https): diisi otomatis saat check
-  check_cert            Boolean  @default(true)
+  check_cert            Boolean   @default(true)
   cert_expires_at       DateTime?
   cert_issuer           String?
-  cert_notified_at      DateTime?
+  cert_subject          String?
+  cert_checked_at       DateTime?
+  // Hasil validasi rantai sertifikat pada pemeriksaan terakhir
+  cert_chain_valid      Boolean?
+  cert_chain_error      String?
+  // Ambang peringatan terkecil yang sudah dikirim (30/14/7/3) supaya tidak spam.
+  // Direset ke null saat sertifikat diperbarui.
+  cert_notified_threshold Int?
+
+  // HTTP check lanjutan
+  http_headers          Json?     // { "X-Api-Key": "…" } — dikirim apa adanya
+  auth_type             String    @default("none") // none | basic | bearer
+  // Kredensial auth disimpan terenkripsi (AES-256-GCM), bukan plaintext
+  auth_secret           String?
+  // Assertion terhadap body JSON: assertion_path + operator + value
+  assertion_path        String?   // mis. $.status atau $.data.items[0].id
+  assertion_operator    String?   // eq | ne | gt | lt | gte | lte | contains | exists
+  assertion_value       String?
 
   created_at            DateTime @default(now())
   updated_at            DateTime @default(now()) @updatedAt
@@ -72,11 +89,18 @@ model Heartbeat {
   response_time Int?
   important     Boolean  @default(false) // true jika status berubah up<->down
   maintenance   Boolean  @default(false) // dicatat saat monitor dalam maintenance window
+  // Lokasi agen yang melakukan check. null = baris lama dari sebelum
+  // multi-location; diperlakukan sama dengan lokasi primary.
+  location      String?
+  // Hasil body assertion (null = monitor ini tidak memakai assertion)
+  assertion_ok      Boolean?
+  assertion_message String?
   created_at    DateTime @default(now())
 
   monitor Monitor @relation(fields: [monitor_id], references: [id], onDelete: Cascade)
 
   @@index([monitor_id, created_at(sort: Desc)])
+  @@index([monitor_id, location, created_at(sort: Desc)])
   @@map("heartbeats")
 }
 

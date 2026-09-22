@@ -1,6 +1,6 @@
 import cron from "node-cron";
 import { prisma, pruneOldHeartbeats } from "./db.js";
-import { config } from "./config.js";
+import { config, isPrimaryLocation } from "./config.js";
 import { runCheck } from "./checks/index.js";
 import { fetchCertInfo, tlsTarget } from "./checks/cert.js";
 import { notifyMonitorEvent, notifyCertExpiry } from "./notifications/index.js";
@@ -13,7 +13,8 @@ const state = new Map(); // id -> { nextRun, retries, running, nextCertCheck }
 let io = null;
 let cache = { monitors: [], at: 0, dirty: true };
 
-const CERT_CHECK_INTERVAL_MS = 6 * 3600_000; // sertifikat cukup dicek tiap 6 jam
+// Handshake TLS mahal, jadi sertifikat tidak diperiksa tiap interval check
+const certCheckIntervalMs = () => Math.max(1, config.certCheckIntervalHours) * 3600_000;
 
 export function initScheduler(socketIo) {
   io = socketIo;
@@ -101,33 +102,49 @@ async function execute(monitor, s) {
     status = STATUS.DOWN;
   }
 
-  await applyResult(monitor, { status, message: result.message, ms: result.ms }, { inMaint: !!maint });
+  await applyResult(monitor, { status, message: result.message, ms: result.ms, assertion: result.assertion }, { inMaint: !!maint });
 
   // Interval: saat retry pakai 1/3 interval (min 5s) supaya cepat memastikan
   const interval = status === STATUS.PENDING ? Math.max(5, Math.floor(monitor.interval_seconds / 3)) : monitor.interval_seconds;
   s.nextRun = Date.now() + interval * 1000;
 
   // Sertifikat TLS dicek terpisah & jarang — handshake tidak perlu tiap interval
-  if (status === STATUS.UP && monitor.check_cert && Date.now() >= (s.nextCertCheck || 0)) {
-    s.nextCertCheck = Date.now() + CERT_CHECK_INTERVAL_MS;
+  // Hanya lokasi primary yang menyimpan & memperingatkan sertifikat, supaya
+  // beberapa lokasi tidak mengirim alert yang sama.
+  if (status === STATUS.UP && monitor.check_cert && isPrimaryLocation() && Date.now() >= (s.nextCertCheck || 0)) {
+    s.nextCertCheck = Date.now() + certCheckIntervalMs();
     inspectCertificate(monitor).catch((e) => console.error(`[cert] monitor #${monitor.id}:`, e.message));
   }
 }
 
 // Catat heartbeat + kelola incident + kirim alert + siarkan ke socket.
 // Dipakai scheduler maupun endpoint push, sehingga perilakunya persis sama.
-export async function applyResult(monitor, { status, message, ms }, opts = {}) {
+export async function applyResult(monitor, { status, message, ms, assertion }, opts = {}) {
+  const location = config.locationName;
+  const primary = isPrimaryLocation();
   const inMaint = opts.inMaint !== undefined ? opts.inMaint : !!(await isInMaintenance(monitor.id));
+
+  // Transisi status dihitung per lokasi: tiap agen punya riwayatnya sendiri.
+  // Baris lama (location null) dianggap milik lokasi primary.
   const prev = await prisma.heartbeat.findFirst({
-    where: { monitor_id: monitor.id, status: { in: [STATUS.DOWN, STATUS.UP] } },
+    where: { monitor_id: monitor.id, status: { in: [STATUS.DOWN, STATUS.UP] }, ...locationFilter(location) },
     orderBy: [{ created_at: "desc" }, { id: "desc" }],
   });
   const prevStatus = prev ? prev.status : null;
   const important = status !== STATUS.PENDING && prevStatus !== status;
 
   const beat = await prisma.heartbeat.create({
-    data: { monitor_id: monitor.id, status, message, response_time: ms ?? null, important, maintenance: inMaint },
+    data: {
+      monitor_id: monitor.id, status, message, response_time: ms ?? null,
+      important, maintenance: inMaint, location,
+      assertion_ok: assertion ? assertion.ok : null,
+      assertion_message: assertion ? assertion.message : null,
+    },
   });
+
+  // Lokasi sekunder hanya merekam heartbeat untuk perbandingan. Incident dan
+  // alert tetap dipegang lokasi primary agar tidak ada alert ganda.
+  if (!primary) return beat;
 
   // Incident selalu dicatat; alert hanya dikirim di luar maintenance window.
   if (status === STATUS.DOWN) {
@@ -153,13 +170,21 @@ export async function applyResult(monitor, { status, message, ms }, opts = {}) {
   return beat;
 }
 
+// Baris heartbeat lama ditulis sebelum multi-location ada (location null),
+// jadi lokasi primary ikut memilikinya.
+export function locationFilter(location) {
+  return location === config.primaryLocation
+    ? { OR: [{ location: null }, { location }] }
+    : { location };
+}
+
 async function broadcast(monitorId, beat, { important, status, inMaint }) {
   if (!io) return;
   const full = await findMonitor(monitorId);
   if (!full) return;
   // push_token tidak pernah disiarkan lewat socket — room ini juga berisi viewer
   const { push_token, ...decorated } = full;
-  io.to("admin").emit("heartbeat", { monitorId, heartbeat: beat, monitor: decorated });
+  io.to("admin").emit("heartbeat", { monitorId, heartbeat: beat, monitor: decorated, location: beat.location });
   if (important) io.to("admin").emit("monitor:status", { monitorId, status });
   io.emit("public:heartbeat", {
     monitorId, status: decorated.status, maintenance: inMaint,
@@ -167,23 +192,43 @@ async function broadcast(monitorId, beat, { important, status, inMaint }) {
   });
 }
 
-// Simpan tanggal kedaluwarsa sertifikat & kirim peringatan bila sudah dekat.
-// Peringatan diulang maksimal sekali per hari selama masih dalam ambang batas.
+// Ambang terkecil yang sudah terlewati, mis. sisa 10 hari dengan ambang
+// [30,14,7,3] menghasilkan 14. null berarti belum melewati ambang mana pun.
+export function crossedThreshold(daysRemaining, thresholds = config.certAlertThresholds) {
+  const crossed = thresholds.filter((t) => daysRemaining <= t);
+  return crossed.length ? Math.min(...crossed) : null;
+}
+
+// Kolom sertifikat hasil satu pemeriksaan
+const certColumns = (info) => ({
+  cert_expires_at: info.valid_to,
+  cert_issuer: info.issuer,
+  cert_subject: info.subject,
+  cert_chain_valid: info.authorized,
+  cert_chain_error: info.authorization_error || null,
+  cert_checked_at: new Date(),
+});
+
+// Simpan data sertifikat dan kirim peringatan sekali per ambang yang dilewati.
+// Saat sertifikat diperbarui (sisa hari kembali di atas ambang terbesar),
+// penandanya direset sehingga siklus peringatan berikutnya berjalan lagi.
 async function inspectCertificate(monitor) {
   const target = tlsTarget(monitor);
   if (!target) return;
   const info = await fetchCertInfo({ ...target, timeoutSeconds: Math.min(monitor.timeout_seconds || 10, 15) });
   if (!info.ok) return;
 
-  const data = { cert_expires_at: info.valid_to, cert_issuer: info.issuer };
-  const warn = info.days_remaining <= config.certExpiryWarnDays;
-  const lastNotified = monitor.cert_notified_at ? new Date(monitor.cert_notified_at).getTime() : 0;
+  const data = certColumns(info);
+  const threshold = crossedThreshold(info.days_remaining);
+  const notified = monitor.cert_notified_threshold;
 
-  if (warn && Date.now() - lastNotified > 86400_000) {
-    data.cert_notified_at = new Date();
-    notifyCertExpiry(monitor, info);
-  } else if (!warn && monitor.cert_notified_at) {
-    data.cert_notified_at = null; // sertifikat sudah diperbarui — siap memperingatkan lagi nanti
+  if (threshold === null) {
+    // Sertifikat masih panjang umurnya — siap memperingatkan lagi nanti
+    if (notified !== null && notified !== undefined) data.cert_notified_threshold = null;
+  } else if (notified === null || notified === undefined || threshold < notified) {
+    // Ambang baru yang lebih mendesak: kirim sekali, lalu catat
+    data.cert_notified_threshold = threshold;
+    notifyCertExpiry(monitor, { ...info, threshold });
   }
 
   await prisma.monitor.update({ where: { id: monitor.id }, data });
@@ -196,10 +241,7 @@ export async function checkCertificateNow(monitor) {
   if (!target) return { ok: false, error: "Monitor ini bukan HTTPS" };
   const info = await fetchCertInfo({ ...target, timeoutSeconds: 15 });
   if (info.ok) {
-    await prisma.monitor.update({
-      where: { id: monitor.id },
-      data: { cert_expires_at: info.valid_to, cert_issuer: info.issuer },
-    });
+    await prisma.monitor.update({ where: { id: monitor.id }, data: certColumns(info) });
     invalidateCache();
   }
   return info;

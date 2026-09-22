@@ -190,12 +190,18 @@ export async function notifyMonitorEvent(monitor, status, heartbeat, incident) {
 export async function notifyCertExpiry(monitor, cert) {
   try {
     const target = monitorTarget(monitor);
-    const title = `⚠️ [Pulsewatch] Sertifikat ${monitor.name} kedaluwarsa dalam ${cert.days_remaining} hari`;
-    const body =
+    const expired = cert.days_remaining <= 0;
+    const title = expired
+      ? `⛔ [Pulsewatch] Sertifikat ${monitor.name} SUDAH kedaluwarsa`
+      : `⚠️ [Pulsewatch] Sertifikat ${monitor.name} kedaluwarsa dalam ${cert.days_remaining} hari`;
+    let body =
       `Monitor: ${monitor.name}\nTarget: ${target}\n` +
       `Berlaku sampai: ${new Date(cert.valid_to).toISOString()}\n` +
       `Penerbit: ${cert.issuer || "-"}\n` +
-      `Sisa: ${cert.days_remaining} hari\n${config.baseUrl}/monitors/${monitor.id}`;
+      `Sisa: ${cert.days_remaining} hari`;
+    if (cert.threshold) body += `\nAmbang peringatan: ${cert.threshold} hari`;
+    if (cert.authorized === false) body += `\nRantai sertifikat TIDAK valid: ${cert.authorization_error || "tidak diketahui"}`;
+    body += `\n${config.baseUrl}/monitors/${monitor.id}`;
 
     await fanout(monitor.id, {
       event: "monitor.cert_expiry",
@@ -203,7 +209,10 @@ export async function notifyCertExpiry(monitor, cert) {
       body,
       status: "cert",
       monitor: { id: monitor.id, name: monitor.name, type: monitor.type, target },
-      cert: { valid_to: cert.valid_to, days_remaining: cert.days_remaining, issuer: cert.issuer },
+      cert: {
+        valid_to: cert.valid_to, days_remaining: cert.days_remaining, issuer: cert.issuer,
+        threshold: cert.threshold ?? null, chain_valid: cert.authorized ?? null,
+      },
     });
   } catch (err) {
     console.error("[notify:cert]", err);
