@@ -18,9 +18,10 @@ export async function initDb() {
   }
 }
 
-// Bersihkan heartbeat > 90 hari agar DB tidak membengkak
+// Bersihkan heartbeat lama agar DB tidak membengkak (HEARTBEAT_RETENTION_DAYS)
 export async function pruneOldHeartbeats() {
-  const cutoff = new Date(Date.now() - 90 * 86400_000);
+  const days = Math.max(1, config.heartbeatRetentionDays);
+  const cutoff = new Date(Date.now() - days * 86400_000);
   const { count } = await prisma.heartbeat.deleteMany({ where: { created_at: { lt: cutoff } } });
   if (count) console.log(`[db] prune ${count} heartbeat lama`);
 }

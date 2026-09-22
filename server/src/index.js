@@ -1,12 +1,12 @@
 import express from "express";
 import http from "node:http";
-import cors from "cors";
 import fs from "node:fs";
 import path from "node:path";
 import { Server } from "socket.io";
-import { config } from "./config.js";
+import { config, allowedOrigins } from "./config.js";
 import { initDb } from "./db.js";
-import { verifyToken } from "./lib/auth.js";
+import { userFromToken } from "./lib/auth.js";
+import { securityHeaders, corsPolicy } from "./lib/security.js";
 import { initScheduler } from "./scheduler.js";
 import { authRouter } from "./routes/auth.js";
 import { usersRouter } from "./routes/users.js";
@@ -15,12 +15,20 @@ import { notificationsRouter } from "./routes/notifications.js";
 import { statusPagesRouter, publicStatusRouter } from "./routes/statusPages.js";
 import { tagsRouter } from "./routes/tags.js";
 import { maintenanceRouter } from "./routes/maintenance.js";
+import { pushRouter } from "./routes/push.js";
+import { settingsRouter } from "./routes/settings.js";
+import { exportRouter } from "./routes/export.js";
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: "*" } });
+const io = new Server(server, { cors: { origin: allowedOrigins(), credentials: true } });
 
-app.use(cors());
+// Di belakang reverse proxy, req.ip mengikuti X-Forwarded-For (dipakai rate limit)
+if (config.trustProxy) app.set("trust proxy", true);
+app.disable("x-powered-by");
+
+app.use(securityHeaders);
+app.use(corsPolicy);
 app.use(express.json({ limit: "1mb" }));
 
 app.get("/api/health", (req, res) => res.json({ ok: true, name: "pulsewatch", time: new Date().toISOString() }));
@@ -30,27 +38,40 @@ app.use("/api/monitors", monitorsRouter);
 app.use("/api/notifications", notificationsRouter);
 app.use("/api/status-pages", statusPagesRouter);
 app.use("/api/public/status", publicStatusRouter);
+app.use("/api/push", pushRouter);
+app.use("/api/settings", settingsRouter);
+app.use("/api/export", exportRouter);
 app.use("/api/tags", tagsRouter);
 app.use("/api/maintenance", maintenanceRouter);
 
-// Socket.io: client admin/viewer mengirim token untuk bergabung ke room "admin" (data internal)
+// Route API yang tidak dikenal jangan jatuh ke SPA fallback
+app.use("/api", (req, res) => res.status(404).json({ error: "Endpoint tidak ditemukan" }));
+
+// Socket.io: client yang membawa token valid bergabung ke room "admin" (data internal).
+// Data sensitif (mis. push token) tidak pernah disiarkan lewat room ini.
+io.use(async (socket, next) => {
+  socket.data.user = await userFromToken(socket.handshake.auth?.token);
+  next();
+});
 io.on("connection", (socket) => {
-  const token = socket.handshake.auth?.token;
-  if (token && verifyToken(token)) socket.join("admin");
-  socket.on("authenticate", (t, ack) => {
-    if (verifyToken(t)) { socket.join("admin"); ack?.({ ok: true }); } else ack?.({ ok: false });
+  if (socket.data.user) socket.join("admin");
+  socket.on("authenticate", async (t, ack) => {
+    const user = await userFromToken(t);
+    socket.data.user = user;
+    if (user) { socket.join("admin"); ack?.({ ok: true }); } else { socket.leave("admin"); ack?.({ ok: false }); }
   });
 });
 
 // Serve build React di production (single container)
 if (fs.existsSync(config.clientDist)) {
-  app.use(express.static(config.clientDist));
+  app.use(express.static(config.clientDist, { maxAge: "1h", index: false }));
   app.get(/^(?!\/api).*/, (req, res) => res.sendFile(path.join(config.clientDist, "index.html")));
 }
 
 app.use((err, req, res, next) => {
   console.error(err);
-  res.status(500).json({ error: err.message || "Internal error" });
+  // Pesan internal tidak dibocorkan ke client di production
+  res.status(500).json({ error: config.isProd ? "Terjadi kesalahan pada server" : err.message || "Internal error" });
 });
 
 await initDb();

@@ -2,15 +2,33 @@ import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { prisma } from "../db.js";
 import { signToken, requireAuth, publicUser } from "../lib/auth.js";
+import { blockWhenLocked, clientIp, recordFailure, resetKey } from "../lib/ratelimit.js";
 
 export const authRouter = Router();
 
-authRouter.post("/login", async (req, res) => {
+// Kunci rate limit: per IP dan per username, supaya brute force dari satu IP
+// maupun ke satu akun dari banyak IP sama-sama tertahan.
+const loginKeys = (req) => {
+  const keys = [`login:ip:${clientIp(req)}`];
+  const u = String(req.body?.username || "").trim().toLowerCase();
+  if (u) keys.push(`login:user:${u}`);
+  return keys;
+};
+
+authRouter.post("/login", blockWhenLocked(loginKeys), async (req, res) => {
   const { username, password } = req.body || {};
   const user = await prisma.user.findUnique({ where: { username: String(username || "") } });
-  if (!user || !bcrypt.compareSync(password || "", user.password_hash)) {
+  const ok = user && bcrypt.compareSync(String(password || ""), user.password_hash);
+  if (!ok) {
+    let wait = 0;
+    for (const key of loginKeys(req)) wait = Math.max(wait, recordFailure(key));
+    if (wait) {
+      res.set("Retry-After", String(wait));
+      return res.status(429).json({ error: `Terlalu banyak percobaan. Coba lagi dalam ${Math.ceil(wait / 60)} menit.` });
+    }
     return res.status(401).json({ error: "Username atau password salah" });
   }
+  for (const key of loginKeys(req)) resetKey(key);
   res.json({ token: signToken(user), user: publicUser(user) });
 });
 
@@ -19,10 +37,16 @@ authRouter.get("/me", requireAuth, (req, res) => res.json({ user: req.user }));
 authRouter.post("/change-password", requireAuth, async (req, res) => {
   const { currentPassword, newPassword } = req.body || {};
   const user = await prisma.user.findUnique({ where: { id: req.user.id } });
-  if (!user || !bcrypt.compareSync(currentPassword || "", user.password_hash)) {
+  if (!user || !bcrypt.compareSync(String(currentPassword || ""), user.password_hash)) {
     return res.status(400).json({ error: "Password saat ini salah" });
   }
-  if (!newPassword || newPassword.length < 6) return res.status(400).json({ error: "Password baru minimal 6 karakter" });
-  await prisma.user.update({ where: { id: user.id }, data: { password_hash: bcrypt.hashSync(newPassword, 10) } });
-  res.json({ ok: true });
+  if (!newPassword || String(newPassword).length < 8) return res.status(400).json({ error: "Password baru minimal 8 karakter" });
+  if (newPassword === currentPassword) return res.status(400).json({ error: "Password baru harus berbeda dari password saat ini" });
+  const updated = await prisma.user.update({
+    where: { id: user.id },
+    // password_changed_at membatalkan semua token lama (termasuk di perangkat lain)
+    data: { password_hash: bcrypt.hashSync(newPassword, 10), password_changed_at: new Date() },
+  });
+  // Token baru dikembalikan agar sesi yang sedang dipakai tidak ikut terputus
+  res.json({ ok: true, token: signToken(updated) });
 });

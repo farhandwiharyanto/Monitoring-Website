@@ -12,11 +12,13 @@ datasource db {
 }
 
 model User {
-  id            Int      @id @default(autoincrement())
-  username      String   @unique
-  password_hash String
-  role          String   @default("admin") // admin | viewer
-  created_at    DateTime @default(now())
+  id                  Int      @id @default(autoincrement())
+  username            String   @unique
+  password_hash       String
+  role                String   @default("admin") // admin | viewer
+  // Token yang diterbitkan sebelum waktu ini dianggap batal (dipakai saat ganti password)
+  password_changed_at DateTime @default(now())
+  created_at          DateTime @default(now())
 
   @@map("users")
 }
@@ -24,7 +26,7 @@ model User {
 model Monitor {
   id                    Int      @id @default(autoincrement())
   name                  String
-  type                  String   @default("http") // http | tcp | ping | dns
+  type                  String   @default("http") // http | tcp | ping | dns | push
   url                   String?
   hostname              String?
   port                  Int?
@@ -37,6 +39,18 @@ model Monitor {
   expected_status_codes String   @default("200-299")
   keyword               String?
   active                Boolean  @default(true)
+
+  // Monitor tipe `push`: target mengirim heartbeat ke /api/push/<token>.
+  // Dianggap down bila tidak ada heartbeat melewati grace period.
+  push_token            String?  @unique
+  push_grace_seconds    Int      @default(60)
+
+  // Sertifikat TLS (monitor https): diisi otomatis saat check
+  check_cert            Boolean  @default(true)
+  cert_expires_at       DateTime?
+  cert_issuer           String?
+  cert_notified_at      DateTime?
+
   created_at            DateTime @default(now())
   updated_at            DateTime @default(now()) @updatedAt
 
@@ -84,7 +98,7 @@ model Incident {
 model Notification {
   id         Int      @id @default(autoincrement())
   name       String
-  type       String   // telegram | discord | email | webhook
+  type       String   // telegram | discord | email | webhook | slack | googlechat | ntfy
   config     Json     @default("{}")
   is_default Boolean  @default(false)
   created_at DateTime @default(now())
@@ -111,11 +125,35 @@ model StatusPage {
   title       String
   description String?
   published   Boolean  @default(true)
+
+  // Kustomisasi tampilan halaman publik
+  logo_url     String?
+  accent_color String  @default("#38bdf8")
+  theme        String  @default("dark") // dark | light | auto
+  show_uptime  Boolean @default(true)
+  show_bars    Boolean @default(true)
+  show_incidents Boolean @default(true)
+  footer_text  String?
+  // Pengumuman/banner incident yang ditulis manual oleh admin
+  announcement       String?
+  announcement_style String  @default("info") // info | warning | critical
+  // Domain khusus (opsional): halaman juga bisa dibuka lewat host ini
+  custom_domain String? @unique
+
   created_at  DateTime @default(now())
 
   monitors StatusPageMonitor[]
 
   @@map("status_pages")
+}
+
+// Pengaturan global aplikasi (key/value) — mis. bahasa & tema default
+model Setting {
+  key        String   @id
+  value      Json     @default("{}")
+  updated_at DateTime @default(now()) @updatedAt
+
+  @@map("settings")
 }
 
 model StatusPageMonitor {

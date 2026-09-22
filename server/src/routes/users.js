@@ -14,7 +14,7 @@ usersRouter.get("/", async (req, res) => {
 usersRouter.post("/", async (req, res) => {
   const { username, password, role } = req.body || {};
   if (!username || !/^[a-zA-Z0-9._-]{3,32}$/.test(username)) return res.status(400).json({ error: "Username 3–32 karakter (huruf, angka, . _ -)" });
-  if (!password || password.length < 6) return res.status(400).json({ error: "Password minimal 6 karakter" });
+  if (!password || String(password).length < 8) return res.status(400).json({ error: "Password minimal 8 karakter" });
   if (!ROLES.includes(role)) return res.status(400).json({ error: "Role tidak valid" });
   if (await prisma.user.findUnique({ where: { username } })) return res.status(400).json({ error: "Username sudah dipakai" });
   const user = await prisma.user.create({ data: { username, role, password_hash: bcrypt.hashSync(password, 10) } });
@@ -33,8 +33,10 @@ usersRouter.put("/:id", async (req, res) => {
     data.role = role;
   }
   if (password) {
-    if (password.length < 6) return res.status(400).json({ error: "Password minimal 6 karakter" });
+    if (String(password).length < 8) return res.status(400).json({ error: "Password minimal 8 karakter" });
     data.password_hash = bcrypt.hashSync(password, 10);
+    // Reset password oleh admin juga membatalkan sesi user tersebut
+    data.password_changed_at = new Date();
   }
   res.json(publicUser(await prisma.user.update({ where: { id }, data })));
 });
