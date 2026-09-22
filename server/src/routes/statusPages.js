@@ -2,12 +2,20 @@ import { Router } from "express";
 import { prisma } from "../db.js";
 import { requireAuth, requireAdmin } from "../lib/auth.js";
 import { decorateMonitors, monitorInclude } from "../lib/stats.js";
+import { config } from "../config.js";
 
 export const statusPagesRouter = Router();   // admin (butuh auth)
 export const publicStatusRouter = Router();  // publik tanpa login
 
-const include = { monitors: { select: { monitor_id: true }, orderBy: { sort_order: "asc" } } };
-const shape = ({ monitors, ...p }) => ({ ...p, monitor_ids: monitors.map((m) => m.monitor_id) });
+const include = {
+  monitors: { select: { monitor_id: true }, orderBy: { sort_order: "asc" } },
+  tags: { select: { tag_id: true } },
+};
+const shape = ({ monitors, tags, ...p }) => ({
+  ...p,
+  monitor_ids: monitors.map((m) => m.monitor_id),
+  tag_ids: (tags || []).map((t) => t.tag_id),
+});
 
 const THEMES = ["dark", "light", "auto"];
 // "resolve" dipakai endpoint pencarian custom domain di bawah
@@ -23,6 +31,17 @@ async function syncMonitors(pageId, ids) {
     data: valid
       .sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id))
       .map((m, i) => ({ status_page_id: pageId, monitor_id: m.id, sort_order: i })),
+    skipDuplicates: true,
+  });
+}
+
+// Monitor bisa dipilih lewat tag/group; gabungan tag dan pilihan langsung.
+async function syncTags(pageId, ids) {
+  if (!Array.isArray(ids)) return;
+  const valid = await prisma.tag.findMany({ where: { id: { in: ids.map(Number).filter(Number.isFinite) } }, select: { id: true } });
+  await prisma.statusPageTag.deleteMany({ where: { status_page_id: pageId } });
+  await prisma.statusPageTag.createMany({
+    data: valid.map((t) => ({ status_page_id: pageId, tag_id: t.id })),
     skipDuplicates: true,
   });
 }
@@ -90,6 +109,7 @@ statusPagesRouter.post("/", requireAdmin, async (req, res) => {
     data: { slug, title: String(title).slice(0, 120), description: description ? String(description).slice(0, 500) : null, published: published !== false, ...look },
   });
   await syncMonitors(page.id, monitor_ids);
+  await syncTags(page.id, req.body?.tag_ids);
   res.status(201).json(shape(await prisma.statusPage.findUnique({ where: { id: page.id }, include })));
 });
 statusPagesRouter.put("/:id", requireAdmin, async (req, res) => {
@@ -116,6 +136,7 @@ statusPagesRouter.put("/:id", requireAdmin, async (req, res) => {
     },
   });
   await syncMonitors(id, monitor_ids);
+  await syncTags(id, req.body?.tag_ids);
   res.json(shape(await prisma.statusPage.findUnique({ where: { id }, include })));
 });
 statusPagesRouter.delete("/:id", requireAdmin, async (req, res) => {
@@ -127,9 +148,20 @@ statusPagesRouter.delete("/:id", requireAdmin, async (req, res) => {
 
 // Halaman mana yang dilayani untuk domain ini? Dipakai SPA agar custom domain
 // langsung menampilkan status page di path "/".
+// Host yang dilihat pengunjung. Di belakang reverse proxy, nginx/traefik
+// meneruskan domain asli lewat X-Forwarded-Host; header itu hanya dipercaya
+// bila TRUST_PROXY aktif supaya tidak bisa dipalsukan klien langsung.
+export function requestHost(req) {
+  if (config.trustProxy) {
+    const fwd = String(req.headers["x-forwarded-host"] || "").split(",")[0].trim();
+    if (fwd) return hostify(fwd);
+  }
+  return hostify(req.headers.host || "");
+}
+
 // Selalu 200: domain biasa cukup mendapat slug null, bukan error.
 publicStatusRouter.get("/resolve", async (req, res) => {
-  const host = hostify(req.headers.host || "");
+  const host = requestHost(req);
   if (!host) return res.json({ slug: null });
   const page = await prisma.statusPage.findFirst({ where: { custom_domain: host, published: true }, select: { slug: true } });
   res.json({ slug: page ? page.slug : null });
@@ -138,19 +170,43 @@ publicStatusRouter.get("/resolve", async (req, res) => {
 publicStatusRouter.get("/:slug", async (req, res) => {
   const page = await prisma.statusPage.findFirst({
     where: { slug: req.params.slug, published: true },
-    include: { monitors: { orderBy: { sort_order: "asc" }, include: { monitor: { include: monitorInclude } } } },
+    include: {
+      monitors: { orderBy: { sort_order: "asc" }, include: { monitor: { include: monitorInclude } } },
+      tags: { include: { tag: true } },
+    },
   });
   if (!page) return res.status(404).json({ error: "Status page tidak ditemukan" });
-  const decorated = await decorateMonitors(page.monitors.map((x) => x.monitor), { beats: 30 });
+
+  // Monitor yang ditampilkan = pilihan langsung + semua monitor bertag terpilih.
+  // Pilihan langsung tampil dulu sesuai urutannya, sisanya menyusul per nama.
+  const direct = page.monitors.map((x) => x.monitor);
+  const seen = new Set(direct.map((m) => m.id));
+  const tagIds = page.tags.map((t) => t.tag_id);
+  if (tagIds.length) {
+    const byTag = await prisma.monitor.findMany({
+      where: { tags: { some: { tag_id: { in: tagIds } } } },
+      include: monitorInclude,
+      orderBy: { name: "asc" },
+    });
+    for (const m of byTag) if (!seen.has(m.id)) { seen.add(m.id); direct.push(m); }
+  }
+
+  const decorated = await decorateMonitors(direct, { beats: 30 });
   const since = new Date(Date.now() - 7 * 86400_000);
   const incidents = page.show_incidents
     ? await prisma.incident.findMany({
         where: { monitor_id: { in: decorated.map((d) => d.id) }, started_at: { gte: since } },
         orderBy: { started_at: "desc" },
-        select: { monitor_id: true, started_at: true, resolved_at: true, maintenance: true },
+        select: {
+          id: true, monitor_id: true, started_at: true, resolved_at: true, maintenance: true,
+          // Kabar manual dari admin — satu-satunya teks incident yang tampil ke publik
+          updates: { orderBy: { created_at: "desc" }, select: { status: true, message: true, created_at: true } },
+        },
       })
     : [];
-  // Hanya expose data yang aman untuk publik
+
+  // Hanya expose data yang aman untuk publik. URL/hostname, port, konfigurasi
+  // check, pesan heartbeat, dan penyebab incident sengaja TIDAK disertakan.
   const monitors = decorated.map((d) => ({
     id: d.id, name: d.name, type: d.type, status: d.status, in_maintenance: d.in_maintenance,
     tags: d.tags,

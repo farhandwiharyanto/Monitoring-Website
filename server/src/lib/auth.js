@@ -1,6 +1,7 @@
 import jwt from "jsonwebtoken";
 import { config } from "../config.js";
 import { prisma } from "../db.js";
+import { looksLikeApiKey, resolveApiKey, rateLimitApiKey } from "./apikey.js";
 
 export function signToken(user) {
   return jwt.sign({ sub: user.id, username: user.username, role: user.role }, config.jwtSecret, { expiresIn: config.jwtTtl });
@@ -35,14 +36,59 @@ export async function userFromToken(token) {
   return publicUser(user);
 }
 
-// Express middleware: butuh header Authorization: Bearer <token>.
-// User dibaca ulang dari DB agar perubahan role / penghapusan user langsung berlaku.
-export async function requireAuth(req, res, next) {
+export const bearerToken = (req) => {
   const header = req.headers.authorization || "";
-  const token = header.startsWith("Bearer ") ? header.slice(7) : null;
+  return header.startsWith("Bearer ") ? header.slice(7).trim() : null;
+};
+
+// API key dipetakan ke role yang setara supaya seluruh pengecekan role yang
+// sudah ada tetap berlaku: scope read = viewer, scope write = admin.
+const roleForScope = (scope) => (scope === "write" ? "admin" : "viewer");
+
+// Express middleware: menerima JWT hasil login maupun API key, keduanya lewat
+// header Authorization: Bearer <token>.
+export async function requireAuth(req, res, next) {
+  const token = bearerToken(req);
+  if (!token) return res.status(401).json({ error: "Unauthorized" });
+
+  if (looksLikeApiKey(token)) {
+    const apiKey = await resolveApiKey(token);
+    if (!apiKey) return res.status(401).json({ error: "API key tidak valid atau sudah dicabut" });
+
+    // Kunci read-only tidak boleh mengubah apa pun
+    if (apiKey.scope !== "write" && req.method !== "GET") {
+      return res.status(403).json({ error: "API key ini read-only" });
+    }
+
+    const limit = rateLimitApiKey(apiKey.id);
+    res.set("X-RateLimit-Limit", String(config.apiKeyMaxRequests));
+    res.set("X-RateLimit-Remaining", String(Math.max(0, limit.remaining)));
+    if (!limit.allowed) {
+      res.set("Retry-After", String(limit.retryAfter));
+      return res.status(429).json({ error: `Rate limit API key terlampaui, coba lagi dalam ${limit.retryAfter} detik.` });
+    }
+
+    req.apiKey = apiKey;
+    req.user = { id: null, username: `apikey:${apiKey.label}`, role: roleForScope(apiKey.scope) };
+    return next();
+  }
+
   const user = await userFromToken(token);
   if (!user) return res.status(401).json({ error: "Unauthorized" });
   req.user = user;
+  next();
+}
+
+// Endpoint yang hanya boleh diakses manusia yang login: manajemen user,
+// manajemen API key itu sendiri, dan kredensial notifikasi. Mencegah satu
+// API key dipakai menaikkan hak aksesnya sendiri.
+//
+// Memeriksa token mentah selain req.apiKey, supaya tetap benar saat dipasang
+// SEBELUM requireAuth (mis. saat di-mount di app.use) maupun sesudahnya.
+export function denyApiKey(req, res, next) {
+  if (req.apiKey || looksLikeApiKey(bearerToken(req))) {
+    return res.status(403).json({ error: "Endpoint ini tidak bisa diakses dengan API key" });
+  }
   next();
 }
 

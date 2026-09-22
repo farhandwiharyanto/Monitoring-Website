@@ -5,7 +5,7 @@ import path from "node:path";
 import { Server } from "socket.io";
 import { config, allowedOrigins, isPrimaryLocation } from "./config.js";
 import { initDb } from "./db.js";
-import { userFromToken } from "./lib/auth.js";
+import { userFromToken, denyApiKey } from "./lib/auth.js";
 import { securityHeaders, corsPolicy } from "./lib/security.js";
 import { initScheduler } from "./scheduler.js";
 import { authRouter } from "./routes/auth.js";
@@ -19,6 +19,9 @@ import { pushRouter } from "./routes/push.js";
 import { settingsRouter } from "./routes/settings.js";
 import { exportRouter } from "./routes/export.js";
 import { metricsRouter } from "./routes/metrics.js";
+import { apiKeysRouter } from "./routes/apiKeys.js";
+import { webhookRouter } from "./routes/webhook.js";
+import { incidentsRouter } from "./routes/incidents.js";
 
 // Mode worker (WORKER_ONLY=true): hanya menjalankan scheduler dan menulis
 // heartbeat berlabel LOCATION_NAME ke database yang sama. Tidak membuka HTTP.
@@ -48,9 +51,14 @@ app.use(express.json({ limit: "1mb" }));
 
 app.get("/api/health", (req, res) => res.json({ ok: true, name: "pulsewatch", time: new Date().toISOString() }));
 app.use("/api/auth", authRouter);
-app.use("/api/users", usersRouter);
+// Manajemen user & kredensial notifikasi hanya untuk manusia yang login:
+// API key tidak boleh dipakai menaikkan hak aksesnya sendiri.
+app.use("/api/users", denyApiKey, usersRouter);
+app.use("/api/api-keys", apiKeysRouter);
 app.use("/api/monitors", monitorsRouter);
-app.use("/api/notifications", notificationsRouter);
+app.use("/api/notifications", denyApiKey, notificationsRouter);
+app.use("/api/incidents", incidentsRouter);
+app.use("/api/webhook", webhookRouter);
 app.use("/api/status-pages", statusPagesRouter);
 app.use("/api/public/status", publicStatusRouter);
 app.use("/api/push", pushRouter);

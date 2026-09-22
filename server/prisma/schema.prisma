@@ -68,6 +68,14 @@ model Monitor {
   assertion_operator    String?   // eq | ne | gt | lt | gte | lte | contains | exists
   assertion_value       String?
 
+  // Webhook automation: dipanggil untuk memicu aksi di sistem lain
+  // (restart service, buka ticket). Berbeda dari notifikasi yang sekadar memberi kabar.
+  action_webhook_url     String?
+  action_webhook_method  String   @default("POST") // POST | GET | PUT
+  action_webhook_headers Json?
+  action_on_down         Boolean  @default(true)
+  action_on_recover      Boolean  @default(false)
+
   created_at            DateTime @default(now())
   updated_at            DateTime @default(now()) @updatedAt
 
@@ -77,6 +85,8 @@ model Monitor {
   status_pages  StatusPageMonitor[]
   tags          MonitorTag[]
   maintenance   MaintenanceWindow[]
+  events        MonitorEvent[]
+  webhook_logs  WebhookLog[]
 
   @@map("monitors")
 }
@@ -113,10 +123,88 @@ model Incident {
   maintenance Boolean   @default(false) // down terjadi saat maintenance
   notified    Boolean   @default(false) // alert "down" sudah terkirim
 
-  monitor Monitor @relation(fields: [monitor_id], references: [id], onDelete: Cascade)
+  monitor Monitor          @relation(fields: [monitor_id], references: [id], onDelete: Cascade)
+  updates IncidentUpdate[]
+  events  MonitorEvent[]
 
   @@index([monitor_id, started_at(sort: Desc)])
   @@map("incidents")
+}
+
+// Kabar manual dari admin selama incident berlangsung — tampil di status page
+// publik supaya pengguna tahu perkembangannya tanpa melihat detail teknis.
+model IncidentUpdate {
+  id          Int      @id @default(autoincrement())
+  incident_id Int
+  status      String   @default("investigating") // investigating | identified | monitoring | resolved
+  message     String
+  author      String?  // username penulis saat dibuat
+  created_at  DateTime @default(now())
+
+  incident Incident @relation(fields: [incident_id], references: [id], onDelete: Cascade)
+
+  @@index([incident_id, created_at(sort: Desc)])
+  @@map("incident_updates")
+}
+
+// Event non-heartbeat pada timeline monitor: laporan otomasi dari sistem luar
+// (Ansible/n8n lewat webhook inbound) maupun catatan manual.
+model MonitorEvent {
+  id          Int      @id @default(autoincrement())
+  monitor_id  Int
+  incident_id Int?     // incident yang sedang terbuka saat event masuk, bila ada
+  kind        String   @default("automation") // automation | note
+  source      String?  // mis. "ansible", "n8n"
+  title       String
+  message     String?
+  payload     Json?    // body asli dari pemanggil, untuk penelusuran
+  created_at  DateTime @default(now())
+
+  monitor  Monitor   @relation(fields: [monitor_id], references: [id], onDelete: Cascade)
+  incident Incident? @relation(fields: [incident_id], references: [id], onDelete: SetNull)
+
+  @@index([monitor_id, created_at(sort: Desc)])
+  @@map("monitor_events")
+}
+
+// Riwayat pemanggilan webhook automation, termasuk percobaan yang gagal
+model WebhookLog {
+  id          Int      @id @default(autoincrement())
+  monitor_id  Int
+  incident_id Int?
+  event       String   // down | recover
+  url         String
+  method      String
+  attempt     Int      @default(1)
+  ok          Boolean  @default(false)
+  status_code Int?
+  error       String?
+  duration_ms Int?
+  created_at  DateTime @default(now())
+
+  monitor Monitor @relation(fields: [monitor_id], references: [id], onDelete: Cascade)
+
+  @@index([monitor_id, created_at(sort: Desc)])
+  @@map("webhook_logs")
+}
+
+// Kunci akses programatik. Hanya hash yang disimpan; nilai aslinya
+// ditampilkan sekali saat dibuat.
+model ApiKey {
+  id           Int       @id @default(autoincrement())
+  label        String
+  // SHA-256 dari kunci penuh. Kunci punya entropi 256 bit sehingga hash cepat sudah memadai.
+  key_hash     String    @unique
+  // Potongan awal kunci untuk ditampilkan di daftar, mis. "pw_ab12cd34"
+  prefix       String
+  scope        String    @default("read") // read | write
+  created_by   String?
+  last_used_at DateTime?
+  revoked_at   DateTime?
+  created_at   DateTime  @default(now())
+
+  @@index([revoked_at])
+  @@map("api_keys")
 }
 
 model Notification {
@@ -167,8 +255,22 @@ model StatusPage {
   created_at  DateTime @default(now())
 
   monitors StatusPageMonitor[]
+  tags     StatusPageTag[]
 
   @@map("status_pages")
+}
+
+// Status page bisa memilih monitor lewat tag/group, bukan satu per satu.
+// Monitor yang dipilih langsung dan lewat tag digabung.
+model StatusPageTag {
+  status_page_id Int
+  tag_id         Int
+
+  status_page StatusPage @relation(fields: [status_page_id], references: [id], onDelete: Cascade)
+  tag         Tag        @relation(fields: [tag_id], references: [id], onDelete: Cascade)
+
+  @@id([status_page_id, tag_id])
+  @@map("status_page_tags")
 }
 
 // Pengaturan global aplikasi (key/value) — mis. bahasa & tema default
@@ -198,7 +300,8 @@ model Tag {
   color      String   @default("#38bdf8")
   created_at DateTime @default(now())
 
-  monitors MonitorTag[]
+  monitors     MonitorTag[]
+  status_pages StatusPageTag[]
 
   @@map("tags")
 }

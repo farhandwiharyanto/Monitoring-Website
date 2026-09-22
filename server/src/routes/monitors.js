@@ -8,6 +8,7 @@ import { runCheck, MONITOR_TYPES } from "../checks/index.js";
 import { encryptSecret, decryptSecret } from "../lib/crypto.js";  // decryptSecret: mempertahankan password lama saat edit
 import { ASSERTION_OPERATORS, operatorNeedsValue, parsePath, describeAssertion } from "../lib/assertion.js";
 import { newPushToken } from "./push.js";
+import { triggerActionWebhook } from "../lib/actionWebhook.js";
 import { upsertTags } from "./tags.js";
 
 export const monitorsRouter = Router();
@@ -16,6 +17,7 @@ monitorsRouter.use(requireAuth);
 const DNS_TYPES = ["A", "AAAA", "CNAME", "MX", "NS", "TXT", "SOA", "SRV"];
 const HTTP_METHODS = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"];
 const AUTH_TYPES = ["none", "basic", "bearer"];
+const ACTION_METHODS = ["POST", "GET", "PUT"];
 const MAX_HEADERS = 20;
 
 // Header kontrol transport tidak boleh diatur dari UI
@@ -41,6 +43,33 @@ function cleanHeaders(input, errors) {
     out[key] = String(rawValue ?? "").slice(0, 2048);
   }
   return Object.keys(out).length ? out : null;
+}
+
+// Konfigurasi webhook aksi: URL http(s), method terbatas, header aman
+function cleanActionWebhook(body, errors) {
+  const out = {};
+  if (body.action_webhook_url !== undefined) {
+    const raw = String(body.action_webhook_url || "").trim();
+    if (!raw) out.action_webhook_url = null;
+    else {
+      let parsed;
+      try { parsed = new URL(raw); } catch { parsed = null; }
+      if (!parsed || !/^https?:$/.test(parsed.protocol)) errors.push("URL webhook aksi harus diawali http:// atau https://");
+      else out.action_webhook_url = raw.slice(0, 2048);
+    }
+  }
+  if (body.action_webhook_method !== undefined) {
+    const m = String(body.action_webhook_method || "POST").toUpperCase();
+    if (!ACTION_METHODS.includes(m)) errors.push(`Method webhook aksi harus salah satu dari ${ACTION_METHODS.join(", ")}`);
+    else out.action_webhook_method = m;
+  }
+  if (body.action_webhook_headers !== undefined) {
+    const headers = cleanHeaders(body.action_webhook_headers, errors);
+    if (headers !== undefined) out.action_webhook_headers = headers;
+  }
+  if (body.action_on_down !== undefined) out.action_on_down = !!body.action_on_down;
+  if (body.action_on_recover !== undefined) out.action_on_recover = !!body.action_on_recover;
+  return out;
 }
 
 // Kembalikan nilai auth_secret baru, atau undefined kalau tidak perlu diubah
@@ -150,6 +179,9 @@ function validate(body, existing = null) {
     m.assertion_operator = null;
     m.assertion_value = null;
   }
+
+  // Webhook aksi berlaku untuk semua tipe monitor, termasuk push dan ping
+  Object.assign(m, cleanActionWebhook(body, errors));
 
   if (!m.name) errors.push("Nama wajib diisi");
   // Monitor push tidak melakukan koneksi keluar, jadi timeout-nya tidak dipakai
@@ -325,6 +357,42 @@ monitorsRouter.get("/:id/events", async (req, res) => {
   const where = { monitor_id: Number(req.params.id), important: true };
   if (requested !== "all") Object.assign(where, locationFilter(requested || config.primaryLocation));
   res.json(await prisma.heartbeat.findMany({ where, orderBy: { created_at: "desc" }, take: 50 }));
+});
+
+// Timeline event non-heartbeat: laporan otomasi dari webhook inbound
+monitorsRouter.get("/:id/events-log", async (req, res) => {
+  const take = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
+  res.json(
+    await prisma.monitorEvent.findMany({
+      where: { monitor_id: Number(req.params.id) },
+      orderBy: { created_at: "desc" },
+      take,
+    })
+  );
+});
+
+// Riwayat pemanggilan webhook aksi, termasuk percobaan yang gagal.
+// Admin-only: URL dan header webhook bisa mengandung token.
+monitorsRouter.get("/:id/webhook-logs", requireAdmin, async (req, res) => {
+  const take = Math.min(200, Math.max(1, Number(req.query.limit) || 30));
+  res.json(
+    await prisma.webhookLog.findMany({
+      where: { monitor_id: Number(req.params.id) },
+      orderBy: { created_at: "desc" },
+      take,
+    })
+  );
+});
+
+// Uji webhook aksi tanpa menunggu monitor benar-benar down
+monitorsRouter.post("/:id/test-action-webhook", requireAdmin, async (req, res) => {
+  const monitor = await prisma.monitor.findUnique({ where: { id: Number(req.params.id) } });
+  if (!monitor) return res.status(404).json({ error: "Monitor tidak ditemukan" });
+  if (!monitor.action_webhook_url) return res.status(400).json({ error: "Monitor ini belum punya URL webhook aksi" });
+  // Paksa kirim walau saklar on_down/on_recover dimatikan
+  const result = await triggerActionWebhook({ ...monitor, action_on_down: true }, "down", {});
+  if (!result?.ok) return res.status(400).json({ error: result?.error || "Pemanggilan webhook gagal", ...result });
+  res.json({ ok: true, ...result });
 });
 
 // Maintenance window milik monitor ini

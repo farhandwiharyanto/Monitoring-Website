@@ -4,6 +4,7 @@ import { config, isPrimaryLocation } from "./config.js";
 import { runCheck } from "./checks/index.js";
 import { fetchCertInfo, tlsTarget } from "./checks/cert.js";
 import { notifyMonitorEvent, notifyCertExpiry } from "./notifications/index.js";
+import { triggerActionWebhook } from "./lib/actionWebhook.js";
 import { STATUS } from "./lib/status.js";
 import { findMonitor } from "./lib/stats.js";
 import { isInMaintenance } from "./lib/maintenance.js";
@@ -158,12 +159,18 @@ export async function applyResult(monitor, { status, message, ms, assertion }, o
     if (!inMaint && !incident.notified) {
       await prisma.incident.update({ where: { id: incident.id }, data: { notified: true } });
       notifyMonitorEvent(monitor, "down", beat, incident);
+      // Webhook aksi memicu otomasi di sistem lain (restart, buka ticket).
+      // Sengaja tidak di-await: retry-nya tidak boleh menahan scheduler.
+      triggerActionWebhook(monitor, "down", { incident, heartbeat: beat }).catch(() => {});
     }
   } else if (status === STATUS.UP && prevStatus === STATUS.DOWN) {
     const incident = await prisma.incident.findFirst({ where: { monitor_id: monitor.id, resolved_at: null }, orderBy: { id: "desc" } });
     if (incident) await prisma.incident.update({ where: { id: incident.id }, data: { resolved_at: new Date() } });
     // Alert "recover" hanya jika alert "down"-nya pernah terkirim
-    if (!inMaint && incident?.notified) notifyMonitorEvent(monitor, "up", beat, incident);
+    if (!inMaint && incident?.notified) {
+      notifyMonitorEvent(monitor, "up", beat, incident);
+      triggerActionWebhook(monitor, "recover", { incident, heartbeat: beat }).catch(() => {});
+    }
   }
 
   await broadcast(monitor.id, beat, { important, status, inMaint });
@@ -176,6 +183,13 @@ export function locationFilter(location) {
   return location === config.primaryLocation
     ? { OR: [{ location: null }, { location }] }
     : { location };
+}
+
+// Event non-heartbeat (laporan otomasi, catatan manual) disiarkan ke dashboard
+// supaya timeline monitor ikut hidup tanpa perlu refresh.
+export function emitMonitorEvent(monitorId, event) {
+  if (!io) return;
+  io.to("admin").emit("monitor:event", { monitorId, event });
 }
 
 async function broadcast(monitorId, beat, { important, status, inMaint }) {

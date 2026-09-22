@@ -63,6 +63,16 @@ export const config = {
   // Mode worker: hanya menjalankan scheduler, tanpa API/UI.
   workerOnly: bool(process.env.WORKER_ONLY, false),
 
+  // --- API key ---
+  // Rate limit per kunci: batas request per jendela waktu
+  apiKeyMaxRequests: Number(process.env.API_KEY_RATE_LIMIT || 60),
+  apiKeyWindowSeconds: Number(process.env.API_KEY_RATE_WINDOW_SECONDS || 60),
+
+  // --- Webhook automation ---
+  // Percobaan pemanggilan webhook aksi (termasuk percobaan pertama)
+  actionWebhookAttempts: Number(process.env.ACTION_WEBHOOK_ATTEMPTS || 3),
+  actionWebhookTimeoutSeconds: Number(process.env.ACTION_WEBHOOK_TIMEOUT_SECONDS || 15),
+
   // --- Prometheus ---
   // Token scrape untuk /metrics. Kosong + METRICS_PUBLIC=false → hanya JWT yang diterima.
   metricsToken: process.env.METRICS_TOKEN || "",
