@@ -17,6 +17,7 @@ import PublicStatus from "./pages/PublicStatus.jsx";
 import Settings from "./pages/Settings.jsx";
 import Users from "./pages/Users.jsx";
 import Maintenance from "./pages/Maintenance.jsx";
+import Audit from "./pages/Audit.jsx";
 
 export default function App() {
   const { lang, t } = useI18n();
@@ -80,6 +81,7 @@ export default function App() {
             <Route path="/notifications" element={<AdminOnly><Notifications /></AdminOnly>} />
             <Route path="/status-pages" element={<StatusPages />} />
             <Route path="/users" element={<AdminOnly><Users /></AdminOnly>} />
+            <Route path="/audit" element={<AdminOnly><Audit /></AdminOnly>} />
             <Route path="/settings" element={<Settings />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

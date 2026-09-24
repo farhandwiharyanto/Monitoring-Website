@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { Pencil, Trash2, Pause, Play, ArrowLeft, ExternalLink, Wrench, Plus, ShieldCheck, ShieldAlert, RefreshCw, Copy, Download, Webhook, Globe2, CheckCircle2, XCircle, AlertTriangle, Zap, Bot, MessageSquarePlus, X } from "lucide-react";
+import { Pencil, Trash2, Pause, Play, ArrowLeft, ExternalLink, Wrench, Plus, ShieldCheck, ShieldAlert, RefreshCw, Copy, Download, Webhook, Globe2, CheckCircle2, XCircle, AlertTriangle, Zap, Bot, MessageSquarePlus, X, Network } from "lucide-react";
 import clsx from "clsx";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { api, download } from "../lib/api.js";
@@ -41,6 +41,7 @@ export default function MonitorDetail() {
   const [webhookLogs, setWebhookLogs] = useState([]);
   const [updateForm, setUpdateForm] = useState(null); // { incidentId, status, message }
   const [copied, setCopied] = useState(false);
+  const [children, setChildren] = useState([]);
 
   const load = () =>
     Promise.all([
@@ -53,10 +54,11 @@ export default function MonitorDetail() {
       // Riwayat webhook admin-only; viewer cukup dapat daftar kosong
       isAdmin ? api(`/monitors/${id}/webhook-logs`).catch(() => []) : Promise.resolve([]),
       api(`/incidents?monitor_id=${id}&limit=100`).catch(() => []),
+      api(`/monitors/${id}/children`).catch(() => []),
     ])
-      .then(([m, b, i, e, w, ev, wl, inc]) => {
+      .then(([m, b, i, e, w, ev, wl, inc, ch]) => {
         setMonitor(m); setBeats(b); setEvents(e); setWindows(w);
-        setAutoEvents(ev); setWebhookLogs(wl);
+        setAutoEvents(ev); setWebhookLogs(wl); setChildren(ch);
         // Pakai incident yang sudah membawa updates; fallback ke daftar polos
         setIncidents(Array.isArray(inc) && inc.length ? inc : i);
       })
@@ -274,6 +276,44 @@ export default function MonitorDetail() {
         </div>
       )}
 
+      {/* Dependency: induk yang menahan alert, dan monitor yang bergantung ke sini */}
+      {(monitor.parent || children.length > 0) && (
+        <div className="card p-5 space-y-3">
+          <h2 className="font-medium text-fg text-sm flex items-center gap-2">
+            <Network size={15} className="text-accent" /> {t("dep.card")}
+          </h2>
+
+          {monitor.alert_suppressed && (
+            <p className="rounded-lg border border-border bg-panel2 text-fg2 text-xs px-3 py-2 flex items-start gap-2">
+              <AlertTriangle size={14} className="mt-0.5 shrink-0 text-muted" />
+              {t("dep.blockedBy", { parent: monitor.blocked_by?.name || "" })}
+            </p>
+          )}
+
+          {monitor.parent && (
+            <p className="text-sm text-fg2">
+              {t("dep.parentLabel")}:{" "}
+              <Link to={`/monitors/${monitor.parent.id}`} className="text-accent hover:underline">{monitor.parent.name}</Link>
+            </p>
+          )}
+
+          {children.length > 0 && (
+            <div>
+              <p className="text-xs uppercase tracking-wide text-muted mb-1.5">{t("dep.childrenLabel")}</p>
+              <ul className="divide-y divide-border">
+                {children.map((c) => (
+                  <li key={c.id} className="py-2 flex items-center gap-3">
+                    <StatusBadge status={c.status} />
+                    <Link to={`/monitors/${c.id}`} className="text-sm text-fg2 hover:text-accent truncate flex-1 min-w-0">{c.name}</Link>
+                    {c.alert_suppressed && <span className="text-[10px] text-muted border border-border rounded px-1.5 py-0.5 shrink-0">{t("dep.badge")}</span>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Perbandingan antar lokasi pengecekan */}
       {locations.length > 0 && (
         <div className="card p-5 space-y-3">
@@ -385,6 +425,12 @@ export default function MonitorDetail() {
                     <td className="px-5 py-2.5">
                       <p className="text-fg2">{fmtTime(inc.started_at)}</p>
                       <p className="text-xs text-muted truncate max-w-[220px]" title={inc.cause}>{inc.cause}</p>
+                      {inc.suppressed && (
+                        <p className="text-[11px] text-muted mt-0.5 inline-flex items-center gap-1">
+                          <Network size={11} />
+                          {inc.suppressed_by?.name ? t("dep.suppressedBy", { parent: inc.suppressed_by.name }) : t("dep.suppressedIncident")}
+                        </p>
+                      )}
                       {/* Kabar manual yang tampil di status page publik */}
                       {(inc.updates || []).length > 0 && (
                         <ul className="mt-2 space-y-1 border-l-2 border-accent/30 pl-2.5">

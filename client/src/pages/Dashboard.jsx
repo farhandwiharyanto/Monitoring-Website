@@ -53,7 +53,11 @@ export default function Dashboard() {
         <StatCard
           label={t("dash.down")}
           value={stats?.down ?? "—"}
-          sub={t("dash.downSub", { pending: stats?.pending ?? 0, maint: stats?.maintenance ?? 0, paused: stats?.paused ?? 0 })}
+          sub={
+            t("dash.downSub", { pending: stats?.pending ?? 0, maint: stats?.maintenance ?? 0, paused: stats?.paused ?? 0 }) +
+            // Sebagian yang down mungkin tidak mengirim alert karena induknya juga down
+            (stats?.alerts_suppressed ? ` · ${t("dep.statSub", { n: stats.alerts_suppressed })}` : "")
+          }
           icon={ArrowDownCircle}
           tone={stats?.down ? "text-down" : "text-fg"}
         />

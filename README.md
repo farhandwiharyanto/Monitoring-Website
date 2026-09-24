@@ -39,12 +39,15 @@ Sudah termasuk Postgres, dan migration dijalankan otomatis saat start.
 - Telegram, Discord, Slack, Google Chat, ntfy, Email (SMTP), Webhook
 - Maintenance window (sekali / harian / mingguan) — down saat window aktif tidak memicu alert
 - Webhook aksi untuk memicu otomasi di sistem lain (restart service, buka ticket)
+- Dependency antar-monitor: selama monitor induk down, alert anaknya ditahan — satu gangguan
+  tidak jadi sepuluh notifikasi
 
 **Berbagi & integrasi**
 - Status page publik dengan logo, warna, tema, dan custom domain
 - Incident update manual untuk mengabari pengguna saat gangguan
 - API key read-only / read-write untuk akses dari sistem lain
 - Export CSV/JSON dan endpoint `/metrics` untuk Prometheus
+- Audit log: jejak siapa mengubah apa, kapan, dan dari IP mana
 
 **Antarmuka**
 - Tema gelap & terang, dwibahasa Indonesia / English
@@ -57,9 +60,10 @@ Sudah termasuk Postgres, dan migration dijalankan otomatis saat start.
 | | Isi |
 |---|---|
 | **[Konfigurasi](docs/konfigurasi.md)** | Variabel environment, pengamanan bawaan, migrasi dari versi SQLite |
-| **[Monitoring](docs/monitoring.md)** | Monitor push, HTTP check lanjutan, multi-location |
+| **[Monitoring](docs/monitoring.md)** | Monitor push, HTTP check lanjutan, multi-location, dependency antar-monitor |
 | **[Integrasi](docs/integrasi.md)** | API key, webhook dua arah, export, Prometheus, daftar endpoint |
 | **[Status page](docs/status-page.md)** | Halaman publik, incident update, custom domain (nginx & Traefik) |
+| **[Audit log](docs/audit-log.md)** | Apa yang dicatat, penopengan kredensial, endpoint, arsip |
 
 ---
 
@@ -87,7 +91,7 @@ server/
   src/checks/            http, tcp, ping, dns, cert
   src/notifications/     telegram, discord, slack, googlechat, ntfy, email, webhook
   src/routes/            endpoint REST
-  src/lib/               auth, apikey, crypto, assertion, stats, ratelimit, security
+  src/lib/               auth, apikey, crypto, assertion, stats, ratelimit, security, dependency, audit
 client/src/
   pages/                 halaman dashboard & status page publik
   components/            komponen yang dipakai bersama

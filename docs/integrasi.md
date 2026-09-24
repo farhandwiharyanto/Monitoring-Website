@@ -194,6 +194,7 @@ Metrik yang tersedia:
 | `pulsewatch_monitor_location_up` | sda + `location` | Status menurut tiap lokasi |
 | `pulsewatch_monitor_location_response_time_ms` | sda + `location` | Response time per lokasi |
 | `pulsewatch_monitor_location_split` | sda | 1 bila lokasi tidak sepakat |
+| `pulsewatch_monitor_alert_suppressed` | sda + `blocked_by` | 1 bila alert ditahan karena monitor induk sedang down |
 | `pulsewatch_monitor_cert_expiry_timestamp_seconds` | sda + `issuer` | Unix timestamp expiry sertifikat |
 | `pulsewatch_monitor_cert_days_remaining` | sda | Sisa hari sertifikat |
 | `pulsewatch_monitor_cert_chain_valid` | sda | 1 bila rantai sertifikat valid |
@@ -213,6 +214,12 @@ groups:
         for: 1h
         annotations:
           summary: "Sertifikat {{ $labels.monitor }} tersisa {{ $value }} hari"
+
+      - alert: AlertDitahanTerlaluLama
+        expr: pulsewatch_monitor_alert_suppressed == 1
+        for: 30m
+        annotations:
+          summary: "{{ $labels.monitor }} down tapi alert ditahan oleh {{ $labels.blocked_by }}"
 
       - alert: LokasiTidakSepakat
         expr: pulsewatch_monitor_location_split == 1
@@ -260,6 +267,10 @@ groups:
 | POST | /api/monitors/:id/test-action-webhook | admin | panggil webhook aksi sekarang juga |
 | GET | /api/incidents?open=&monitor_id= | any | incident beserta update-nya |
 | CRUD | /api/incidents/:id/updates | admin | kabar publik selama incident |
+| GET | /api/monitors/:id/children | any | monitor yang bergantung pada monitor ini |
+| GET | /api/audit-logs[?entity=&action=&actor=&q=&from=&to=] | admin (login) | jejak perubahan; `{rows,total,limit,offset}` |
+| GET | /api/audit-logs/filters · /api/audit-logs/:entity/:id | admin (login) | nilai filter · jejak satu entitas |
+| GET | /api/export/audit?format=&from=&to=&entity= | admin | arsip audit log ke CSV/JSON |
 
 Status monitor: `0` down · `1` up · `2` pending · `3` paused · `4` maintenance.
 Heartbeat punya flag `maintenance`, kolom `location`, serta `assertion_ok` / `assertion_message`.
@@ -269,4 +280,5 @@ Seluruh endpoint Phase 1–3 tetap sama bentuknya; field baru hanya ditambahkan,
 atau diubah arti.
 
 Endpoint ber-auth menerima **token login maupun API key** lewat header yang sama, kecuali
-`/api/users`, `/api/api-keys`, dan `/api/notifications` yang hanya untuk manusia yang login.
+`/api/users`, `/api/api-keys`, `/api/notifications`, dan `/api/audit-logs` yang hanya untuk
+manusia yang login.

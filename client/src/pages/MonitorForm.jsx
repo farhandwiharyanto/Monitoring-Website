@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, FlaskConical, Save, Plus, X, ShieldCheck, Zap } from "lucide-react";
+import { ArrowLeft, FlaskConical, Save, Plus, X, ShieldCheck, Zap, Network } from "lucide-react";
 import clsx from "clsx";
 import { api } from "../lib/api.js";
 import { useMonitors } from "../lib/monitors.jsx";
@@ -27,6 +27,8 @@ const empty = {
   interval_seconds: 60, timeout_seconds: 30, max_retries: 1,
   expected_status_codes: "200-299", keyword: "", dns_resolve_type: "A", dns_expected: "",
   push_grace_seconds: 60, check_cert: true,
+  // Dependency: "" = tidak punya induk
+  parent_id: "",
   // HTTP lanjutan
   auth_type: "none", auth_username: "", auth_password: "", auth_token: "",
   assertion_path: "", assertion_operator: "", assertion_value: "",
@@ -51,7 +53,7 @@ const rowsToHeaders = (rows) => {
 export default function MonitorForm() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { refresh } = useMonitors();
+  const { monitors, refresh } = useMonitors();
   const { t } = useI18n();
   const [form, setForm] = useState(empty);
   const [notifs, setNotifs] = useState([]);
@@ -73,6 +75,7 @@ export default function MonitorForm() {
           ...empty, ...m,
           port: m.port ?? "", url: m.url ?? "", hostname: m.hostname ?? "",
           keyword: m.keyword ?? "", dns_expected: m.dns_expected ?? "",
+          parent_id: m.parent_id ?? "",
           auth_type: m.auth_type || "none",
           auth_username: m.auth_username ?? "",
           // Password & token tidak pernah dikirim server; kosong = pertahankan yang tersimpan
@@ -87,6 +90,26 @@ export default function MonitorForm() {
   }, [id]);
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  // Calon induk: semua monitor kecuali dirinya sendiri dan keturunannya —
+  // keduanya pasti ditolak server karena membentuk lingkaran.
+  const selfId = id ? Number(id) : null;
+  const descendants = new Set();
+  if (selfId) {
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const m of monitors || []) {
+        const parentId = m.parent?.id;
+        if (parentId && (parentId === selfId || descendants.has(parentId)) && !descendants.has(m.id)) {
+          descendants.add(m.id);
+          grew = true;
+        }
+      }
+    }
+  }
+  const parentOptions = (monitors || []).filter((m) => m.id !== selfId && !descendants.has(m.id));
+  const parentOf = (monitors || []).find((m) => m.id === Number(form.parent_id));
   const addTag = (name) => {
     const n = String(name || tagInput).trim().toLowerCase().replace(/\s+/g, "-");
     if (!n) return;
@@ -219,6 +242,25 @@ export default function MonitorForm() {
             )}
           </>
         )}
+      </section>
+
+      <section className="card p-6 space-y-4">
+        <div>
+          <h2 className="font-medium text-fg flex items-center gap-2"><Network size={15} className="text-accent" /> {t("dep.title")}</h2>
+          <p className="text-sm text-muted mt-1">{t("dep.subtitle")}</p>
+        </div>
+        <div>
+          <label className="label">{t("dep.parent")}</label>
+          <select className="input" value={form.parent_id ?? ""} onChange={set("parent_id")}>
+            <option value="">{t("dep.noParent")}</option>
+            {parentOptions.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+          </select>
+          <p className="text-xs text-muted mt-2">
+            {form.parent_id
+              ? t("dep.parentHint", { parent: parentOf?.name || "" })
+              : t("dep.noParentHint")}
+          </p>
+        </div>
       </section>
 
       {form.type === "http" && (

@@ -107,3 +107,40 @@ akan selalu sepakat dengan primary. Gunanya cuma untuk menguji alurnya. Multi-lo
 sebenarnya berarti menjalankan worker di host atau region lain.
 
 Lokasi yang aktif 7 hari terakhir bisa dilihat di `GET /api/monitors/locations`.
+
+## Dependency antar-monitor
+
+Satu router mati bisa membuat sepuluh monitor di belakangnya ikut down, dan sepuluh alert
+terkirim untuk satu masalah yang sama. Tentukan **monitor induk** di form monitor (bagian
+*Dependency*) supaya hanya penyebabnya yang berbunyi.
+
+Selama induk berstatus down, untuk monitor anaknya:
+
+| Tetap jalan | Ditahan |
+|---|---|
+| Pengecekan, heartbeat, grafik, uptime | Notifikasi (Telegram, Slack, email, …) |
+| Incident tetap dibuat dan ditutup | Webhook aksi (`on_down` / `on_recover`) |
+
+Jadi datanya tidak berlubang — yang berubah hanya siapa yang dikabari. Incident yang alert-nya
+ditahan diberi penanda `suppressed` beserta nama induk yang menahannya, dan terlihat di halaman
+detail monitor.
+
+**Saat induk pulih tapi anaknya masih down**, alert anak langsung dikirim pada pengecekan
+berikutnya: berarti masalahnya memang miliknya sendiri, bukan bawaan dari induk. Sebaliknya,
+incident yang alert down-nya tidak pernah terkirim juga tidak mengirim kabar "pulih" —
+tidak ada kabar baik untuk kabar buruk yang tidak pernah ada.
+
+Aturan lain yang berlaku:
+
+- Rantai induk boleh bertingkat (mis. `internet → router → database → API`), maksimal **5 tingkat**.
+- Lingkaran ditolak saat menyimpan; monitor yang sudah menjadi keturunan tidak muncul di pilihan induk.
+- Induk yang sedang **dijeda** tidak menahan alert siapa pun — statusnya tidak diperbarui, jadi
+  tidak layak dijadikan acuan.
+- Menghapus induk membuat anak-anaknya jadi mandiri, bukan ikut terhapus.
+
+Yang sedang ditahan bisa dilihat sekaligus lewat:
+
+- badge **alert ditahan** di daftar monitor dan kartu *Dependency* di halaman detail
+- kartu Down di dashboard, yang menyebut berapa alert sedang ditahan
+- metrik `pulsewatch_monitor_alert_suppressed` (lihat [Integrasi](integrasi.md#prometheus--grafana))
+- `GET /api/monitors/:id/children` untuk daftar monitor yang bergantung pada sebuah monitor
