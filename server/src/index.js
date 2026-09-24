@@ -24,6 +24,7 @@ import { webhookRouter } from "./routes/webhook.js";
 import { incidentsRouter } from "./routes/incidents.js";
 import { auditRouter } from "./routes/audit.js";
 import { reportsRouter } from "./routes/reports.js";
+import { oncallRouter, ackRouter } from "./routes/oncall.js";
 
 // Mode worker (WORKER_ONLY=true): hanya menjalankan scheduler dan menulis
 // heartbeat berlabel LOCATION_NAME ke database yang sama. Tidak membuka HTTP.
@@ -63,6 +64,12 @@ app.use("/api/incidents", incidentsRouter);
 // Audit log hanya dibaca admin yang login (router-nya sudah menolak API key)
 app.use("/api/audit-logs", auditRouter);
 app.use("/api/reports", reportsRouter);
+// Tautan acknowledge di pesan notifikasi dibuka tanpa login, jadi dipasang
+// SEBELUM /api/oncall yang ber-auth — Express memilih route sesuai urutan.
+app.use("/api/oncall/ack", ackRouter);
+// Jadwal on-call & escalation policy menyimpan siapa dikabari lewat kontak apa,
+// jadi diperlakukan sama dengan notifikasi: bukan untuk API key.
+app.use("/api/oncall", denyApiKey, oncallRouter);
 app.use("/api/webhook", webhookRouter);
 app.use("/api/status-pages", statusPagesRouter);
 app.use("/api/public/status", publicStatusRouter);

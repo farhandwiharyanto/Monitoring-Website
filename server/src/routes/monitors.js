@@ -12,6 +12,7 @@ import { triggerActionWebhook } from "../lib/actionWebhook.js";
 import { upsertTags } from "./tags.js";
 import { wouldCycle, chainDepth, MAX_DEPTH } from "../lib/dependency.js";
 import { recordAudit, diffFields, snapshotFields } from "../lib/audit.js";
+import { stopEscalation } from "../lib/escalation.js";
 
 export const monitorsRouter = Router();
 monitorsRouter.use(requireAuth);
@@ -245,6 +246,20 @@ async function resolveParent(body, selfId, errors) {
   return parentId;
 }
 
+// Escalation policy monitor. Tidak dikirim = jangan disentuh; dikirim kosong =
+// kembali memakai policy default.
+async function resolveEscalationPolicy(body, errors) {
+  if (body.escalation_policy_id === undefined) return undefined;
+  if (body.escalation_policy_id === null || body.escalation_policy_id === "") return null;
+  const id = Number(body.escalation_policy_id);
+  if (!Number.isFinite(id)) { errors.push("Escalation policy tidak valid"); return undefined; }
+  if (!(await prisma.escalationPolicy.findUnique({ where: { id } }))) {
+    errors.push("Escalation policy tidak ditemukan");
+    return undefined;
+  }
+  return id;
+}
+
 // Relasi notifikasi & tag: hanya disentuh kalau field dikirim (null = biarkan)
 async function syncRelations(monitorId, body) {
   if (Array.isArray(body.notification_ids)) {
@@ -281,10 +296,16 @@ monitorsRouter.get("/locations", async (req, res) => res.json(await knownLocatio
 monitorsRouter.post("/", requireAdmin, async (req, res) => {
   const { m, errors } = validate(req.body, null);
   const parentId = await resolveParent(req.body, null, errors);
+  const policyId = await resolveEscalationPolicy(req.body, errors);
   if (errors.length) return res.status(400).json({ error: errors.join(", ") });
   // Monitor push langsung diberi token; tipe lain tidak memerlukannya
   const created = await prisma.monitor.create({
-    data: { ...m, parent_id: parentId ?? null, push_token: m.type === "push" ? newPushToken() : null },
+    data: {
+      ...m,
+      parent_id: parentId ?? null,
+      escalation_policy_id: policyId ?? null,
+      push_token: m.type === "push" ? newPushToken() : null,
+    },
   });
   await syncRelations(created.id, req.body);
   scheduleNow(created.id);
@@ -319,10 +340,12 @@ monitorsRouter.put("/:id", requireAdmin, async (req, res) => {
   if (!existing) return res.status(404).json({ error: "Monitor tidak ditemukan" });
   const { m, errors } = validate({ ...existing, ...req.body }, existing);
   const parentId = await resolveParent(req.body, id, errors);
+  const policyId = await resolveEscalationPolicy(req.body, errors);
   if (errors.length) return res.status(400).json({ error: errors.join(", ") });
   // Berganti tipe ke/dari push: token dibuat saat dibutuhkan, dibuang saat tidak
   const data = { ...m };
   if (parentId !== undefined) data.parent_id = parentId;
+  if (policyId !== undefined) data.escalation_policy_id = policyId;
   if (m.type === "push" && !existing.push_token) data.push_token = newPushToken();
   if (m.type !== "push" && existing.push_token) data.push_token = null;
   const updated = await prisma.monitor.update({ where: { id }, data });
@@ -340,7 +363,24 @@ monitorsRouter.post("/:id/pause", requireAdmin, async (req, res) => {
   const id = Number(req.params.id);
   const m = await prisma.monitor.update({ where: { id }, data: { active: false } });
   unschedule(id);
-  recordAudit(req, { action: "monitor.pause", entity: "monitor", entityId: id, entityName: m.name, summary: `Monitor "${m.name}" dijeda` });
+
+  // Monitor yang dijeda tidak lagi dicek, jadi incident yang masih terbuka tidak
+  // akan pernah ditutup oleh heartbeat "up". Kalau dibiarkan, incident itu
+  // dianggap berjalan sampai sekarang dan terus menggerus error budget di
+  // laporan SLA. Dijeda karena itu diperlakukan sebagai akhir incident:
+  // downtime yang dihitung berhenti di sini, bukan di waktu monitor dijalankan
+  // lagi. Rantai eskalasinya ikut berhenti — tidak ada gunanya memanggil orang
+  // untuk monitor yang sengaja dimatikan.
+  const open = await prisma.incident.findFirst({ where: { monitor_id: id, resolved_at: null }, orderBy: { id: "desc" } });
+  if (open) {
+    await prisma.incident.update({ where: { id: open.id }, data: { resolved_at: new Date() } });
+    await stopEscalation(open.id, "paused").catch((e) => console.error("[escalation]", e));
+  }
+
+  recordAudit(req, {
+    action: "monitor.pause", entity: "monitor", entityId: id, entityName: m.name,
+    summary: open ? `Monitor "${m.name}" dijeda — incident #${open.id} ikut ditutup` : `Monitor "${m.name}" dijeda`,
+  });
   res.json(shape(await findMonitor(id), req.user));
 });
 monitorsRouter.post("/:id/resume", requireAdmin, async (req, res) => {

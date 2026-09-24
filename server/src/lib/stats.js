@@ -4,6 +4,7 @@ import { config } from "../config.js";
 import { activeMaintenanceMap } from "./maintenance.js";
 import { decryptSecret } from "./crypto.js";
 import { dependencyInfo } from "./dependency.js";
+import { escalationStats } from "./escalation.js";
 
 const HOUR = 3600_000;
 
@@ -176,6 +177,8 @@ export async function dashboardStats() {
   const withUptime = monitors.filter((m) => m.uptime_24h !== null);
   const uptime24 = withUptime.length ? withUptime.reduce((s, m) => s + m.uptime_24h, 0) / withUptime.length : null;
   const openIncidents = await prisma.incident.count({ where: { resolved_at: null } });
+  // Rantai eskalasi yang masih berjalan & yang sudah ada penanggungnya
+  const escalations = await escalationStats();
   return {
     total: monitors.length, up: count(1), down: count(0), pending: count(2), paused: count(3), maintenance: count(4),
     avg_response_24h: avg ? Math.round(avg) : null,
@@ -185,6 +188,9 @@ export async function dashboardStats() {
     location_split: monitors.filter((m) => m.location_split).length,
     // Monitor yang alert-nya sedang ditahan karena induknya down
     alerts_suppressed: monitors.filter((m) => m.alert_suppressed).length,
+    // Eskalasi on-call yang masih berjalan, dan incident terbuka yang sudah di-ack
+    escalations_active: escalations.active,
+    escalations_acknowledged: escalations.acknowledged,
   };
 }
 

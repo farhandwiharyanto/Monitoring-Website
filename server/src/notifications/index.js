@@ -186,6 +186,45 @@ export async function notifyMonitorEvent(monitor, status, heartbeat, incident) {
   }
 }
 
+// Paging satu tingkat eskalasi. Berbeda dari notifyMonitorEvent yang menyiarkan
+// ke semua channel monitor: ini dikirim ke SATU notifikasi saja — sasaran
+// tingkat itu. Kegagalannya dilempar supaya pemanggil bisa mencatatnya sebagai
+// delivery yang gagal, bukan ditelan diam-diam.
+export async function notifyEscalation(notification, { monitor, incident, level, levelCount, delayMinutes, targetLabel, ackUrl }) {
+  const target = monitorTarget(monitor);
+  const downSeconds = incident?.started_at
+    ? Math.round((Date.now() - new Date(incident.started_at).getTime()) / 1000)
+    : null;
+
+  const title = `🚨 [Pulsewatch] Eskalasi ${level}/${levelCount} — ${monitor.name} masih DOWN`;
+  let body =
+    `Monitor: ${monitor.name}\nTarget: ${target}\n` +
+    `Penyebab: ${incident?.cause || "-"}\n`;
+  if (downSeconds !== null) body += `Sudah down: ${formatDuration(downSeconds)}\n`;
+  body += `Tingkat: ${level} dari ${levelCount} (jeda ${delayMinutes} menit)\n`;
+  body += `Dikirim ke: ${targetLabel}\n`;
+  // Tautan ack menghentikan sisa rantai tanpa perlu login — halamannya masih
+  // meminta konfirmasi, jadi pratinjau tautan di aplikasi chat tidak ikut meng-ack.
+  if (ackUrl) body += `\nSaya tangani (acknowledge): ${ackUrl}\n`;
+  body += `${config.baseUrl}/monitors/${monitor.id}`;
+
+  await sendNotification(notification, {
+    event: "monitor.escalation",
+    title,
+    body,
+    status: "down",
+    monitor: { id: monitor.id, name: monitor.name, type: monitor.type, target },
+    escalation: {
+      incident_id: incident?.id ?? null,
+      level,
+      level_count: levelCount,
+      delay_minutes: delayMinutes,
+      target: targetLabel,
+      ack_url: ackUrl || null,
+    },
+  }, { attempts: 3 });
+}
+
 // Peringatan sertifikat TLS yang hampir kedaluwarsa
 export async function notifyCertExpiry(monitor, cert) {
   try {

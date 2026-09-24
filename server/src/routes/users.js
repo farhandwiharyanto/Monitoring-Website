@@ -9,7 +9,13 @@ export const usersRouter = Router();
 usersRouter.use(requireAuth, requireAdmin);
 
 usersRouter.get("/", async (req, res) => {
-  res.json((await prisma.user.findMany({ orderBy: { username: "asc" } })).map(publicUser));
+  const rows = await prisma.user.findMany({
+    orderBy: { username: "asc" },
+    include: { oncall_notification: { select: { id: true, name: true, type: true } } },
+  });
+  // Nama kontak on-call ikut dibawa supaya daftar user bisa menampilkannya
+  // tanpa memanggil router notifikasi (yang admin-only karena berisi kredensial).
+  res.json(rows.map((u) => ({ ...publicUser(u), oncall_notification: u.oncall_notification || null })));
 });
 
 usersRouter.post("/", async (req, res) => {
@@ -32,6 +38,18 @@ usersRouter.put("/:id", async (req, res) => {
   if (!user) return res.status(404).json({ error: "User tidak ditemukan" });
   const { role, password } = req.body || {};
   const data = {};
+  // Kontak on-call: dikirim kosong berarti dilepas, tidak dikirim berarti dibiarkan
+  if (req.body?.oncall_notification_id !== undefined) {
+    const raw = req.body.oncall_notification_id;
+    if (raw === null || raw === "") data.oncall_notification_id = null;
+    else {
+      const nid = Number(raw);
+      if (!Number.isFinite(nid) || !(await prisma.notification.findUnique({ where: { id: nid } }))) {
+        return res.status(400).json({ error: "Notifikasi kontak on-call tidak ditemukan" });
+      }
+      data.oncall_notification_id = nid;
+    }
+  }
   if (role !== undefined) {
     if (!ROLES.includes(role)) return res.status(400).json({ error: "Role tidak valid" });
     if (user.id === req.user.id && role !== "admin") return res.status(400).json({ error: "Tidak bisa menurunkan role diri sendiri" });
@@ -48,7 +66,9 @@ usersRouter.put("/:id", async (req, res) => {
     action: "user.update", entity: "user", entityId: id, entityName: updated.username,
     summary: data.password_hash
       ? `Password "${updated.username}" direset admin — sesinya ikut dibatalkan`
-      : `User "${updated.username}" diubah`,
+      : data.oncall_notification_id !== undefined
+        ? `Kontak on-call "${updated.username}" diubah`
+        : `User "${updated.username}" diubah`,
     changes: diffFields(user, data),
   });
   res.json(publicUser(updated));

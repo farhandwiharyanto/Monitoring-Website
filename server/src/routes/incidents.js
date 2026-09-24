@@ -2,6 +2,7 @@ import { Router } from "express";
 import { prisma } from "../db.js";
 import { requireAuth, requireAdmin } from "../lib/auth.js";
 import { recordAudit, diffFields } from "../lib/audit.js";
+import { escalationMap } from "../lib/escalation.js";
 
 // Kabar manual yang ditulis admin selama incident berlangsung. Murni untuk
 // komunikasi ke pengguna — status incident sendiri tetap ditentukan heartbeat,
@@ -32,9 +33,13 @@ incidentsRouter.get("/", async (req, res) => {
       : []
     ).map((m) => [m.id, m.name])
   );
+  // Rantai eskalasi tiap incident: dipakai UI untuk menandai mana yang sudah
+  // ditangani dan kapan tingkat berikutnya jatuh tempo.
+  const escalations = await escalationMap(rows.map((r) => r.id));
   res.json(rows.map((r) => ({
     ...r,
     suppressed_by: r.suppressed_by_id ? { id: r.suppressed_by_id, name: names.get(r.suppressed_by_id) || null } : null,
+    escalation: escalations.get(r.id) || null,
   })));
 });
 

@@ -20,6 +20,13 @@ model User {
   password_changed_at DateTime @default(now())
   created_at          DateTime @default(now())
 
+  // Kontak pribadi untuk paging on-call (mis. Telegram/ntfy miliknya sendiri).
+  // Dipakai saat langkah eskalasi menunjuk jadwal rotasi, bukan channel tim.
+  oncall_notification_id Int?
+  oncall_notification    Notification? @relation("OnCallContact", fields: [oncall_notification_id], references: [id], onDelete: SetNull)
+
+  oncall_shifts OnCallShift[]
+
   @@map("users")
 }
 
@@ -85,12 +92,21 @@ model Monitor {
   // supaya satu gangguan di lapisan bawah tidak membanjiri notifikasi.
   parent_id             Int?
 
+  // Escalation policy yang dipakai saat monitor ini down. null = pakai policy
+  // yang ditandai default; kalau tidak ada juga, monitor ini tidak dieskalasi
+  // dan hanya mengirim notifikasi biasa seperti sebelumnya.
+  escalation_policy_id  Int?
+
   created_at            DateTime @default(now())
   updated_at            DateTime @default(now()) @updatedAt
 
   // Induk dihapus -> anak jadi mandiri lagi (SetNull), bukan ikut terhapus
   parent   Monitor?  @relation("MonitorDependency", fields: [parent_id], references: [id], onDelete: SetNull)
   children Monitor[] @relation("MonitorDependency")
+
+  // Policy dihapus -> monitor kembali memakai policy default (SetNull)
+  escalation_policy EscalationPolicy? @relation(fields: [escalation_policy_id], references: [id], onDelete: SetNull)
+  escalations       Escalation[]
 
   heartbeats    Heartbeat[]
   incidents     Incident[]
@@ -102,6 +118,7 @@ model Monitor {
   webhook_logs  WebhookLog[]
 
   @@index([parent_id])
+  @@index([escalation_policy_id])
   @@map("monitors")
 }
 
@@ -141,9 +158,10 @@ model Incident {
   suppressed       Boolean @default(false)
   suppressed_by_id Int?    // id monitor induk yang menahan, untuk ditampilkan di UI
 
-  monitor Monitor          @relation(fields: [monitor_id], references: [id], onDelete: Cascade)
-  updates IncidentUpdate[]
-  events  MonitorEvent[]
+  monitor    Monitor          @relation(fields: [monitor_id], references: [id], onDelete: Cascade)
+  updates    IncidentUpdate[]
+  events     MonitorEvent[]
+  escalation Escalation?
 
   @@index([monitor_id, started_at(sort: Desc)])
   @@map("incidents")
@@ -233,7 +251,9 @@ model Notification {
   is_default Boolean  @default(false)
   created_at DateTime @default(now())
 
-  monitors MonitorNotification[]
+  monitors          MonitorNotification[]
+  escalation_steps  EscalationStep[]
+  oncall_contact_of User[]               @relation("OnCallContact")
 
   @@map("notifications")
 }
@@ -376,4 +396,149 @@ model AuditLog {
   @@index([entity, entity_id, created_at(sort: Desc)])
   @@index([actor, created_at(sort: Desc)])
   @@map("audit_logs")
+}
+
+// --- Phase 7: on-call & eskalasi ---
+
+// Jadwal rotasi: wadah bagi sekumpulan shift. Modelnya sengaja "shift bebas"
+// bukan rotasi mingguan yang dihitung otomatis, supaya tukar jaga dan libur
+// sehari cukup mengubah satu baris, bukan menggeser urutan seluruh tim.
+model OnCallSchedule {
+  id          Int      @id @default(autoincrement())
+  name        String
+  description String?
+  // Zona waktu untuk menampilkan & mengisi shift di UI. Nilai yang disimpan
+  // tetap UTC seperti kolom waktu lain; ini hanya memengaruhi tampilan.
+  timezone    String   @default("Asia/Jakarta")
+  active      Boolean  @default(true)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @default(now()) @updatedAt
+
+  shifts OnCallShift[]
+  steps  EscalationStep[]
+
+  @@map("oncall_schedules")
+}
+
+// Satu giliran jaga: siapa, dari kapan sampai kapan. Shift boleh bertumpang
+// tindih; yang dianggap bertugas adalah shift dengan start_at paling akhir yang
+// mencakup saat itu, sehingga shift pengganti cukup dibuat belakangan.
+model OnCallShift {
+  id          Int      @id @default(autoincrement())
+  schedule_id Int
+  user_id     Int
+  start_at    DateTime
+  end_at      DateTime
+  note        String?
+  created_at  DateTime @default(now())
+
+  schedule OnCallSchedule @relation(fields: [schedule_id], references: [id], onDelete: Cascade)
+  user     User           @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([schedule_id, start_at])
+  @@index([schedule_id, end_at])
+  @@map("oncall_shifts")
+}
+
+// Aturan eskalasi: urutan langkah beserta jedanya. Dipasang per monitor, atau
+// ditandai default supaya berlaku untuk monitor yang tidak memilih sendiri.
+model EscalationPolicy {
+  id          Int      @id @default(autoincrement())
+  name        String
+  description String?
+  is_default  Boolean  @default(false)
+  active      Boolean  @default(true)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @default(now()) @updatedAt
+
+  steps       EscalationStep[]
+  monitors    Monitor[]
+  escalations Escalation[]
+
+  @@map("escalation_policies")
+}
+
+// Satu tingkat eskalasi: setelah `delay_minutes` sejak incident mulai, kabari
+// sasaran ini. Sasaran selalu notifikasi yang sudah ada — lewat jadwal on-call
+// (kontak pribadi orang yang sedang bertugas) atau channel tertentu langsung.
+model EscalationStep {
+  id              Int    @id @default(autoincrement())
+  policy_id       Int
+  step_order      Int    @default(0)
+  delay_minutes   Int    @default(0) // 0 = dikirim saat incident mulai
+  // oncall  -> schedule_id, kontak pribadi orang yang bertugas saat itu
+  // channel -> notification_id, satu notifikasi tertentu (mis. Slack tim)
+  target          String @default("oncall")
+  schedule_id     Int?
+  notification_id Int?
+
+  policy       EscalationPolicy @relation(fields: [policy_id], references: [id], onDelete: Cascade)
+  schedule     OnCallSchedule?  @relation(fields: [schedule_id], references: [id], onDelete: Cascade)
+  notification Notification?    @relation(fields: [notification_id], references: [id], onDelete: Cascade)
+
+  @@index([policy_id, step_order])
+  @@map("escalation_steps")
+}
+
+// Rantai eskalasi yang sedang/pernah berjalan untuk satu incident. Satu incident
+// hanya punya satu rantai, jadi incident yang sama tidak dieskalasi dua kali.
+model Escalation {
+  id          Int      @id @default(autoincrement())
+  incident_id Int      @unique
+  monitor_id  Int
+  policy_id   Int?
+  started_at  DateTime @default(now())
+
+  // Token untuk acknowledge dari pesan notifikasi tanpa login. Hanya berlaku
+  // selama rantai belum berhenti.
+  ack_token String @unique
+
+  acknowledged_at DateTime?
+  acknowledged_by String? // username, atau "tautan notifikasi" bila lewat token
+
+  stopped_at     DateTime?
+  // acknowledged | recovered | paused | resolved | exhausted
+  stopped_reason String?
+
+  incident   Incident             @relation(fields: [incident_id], references: [id], onDelete: Cascade)
+  monitor    Monitor              @relation(fields: [monitor_id], references: [id], onDelete: Cascade)
+  policy     EscalationPolicy?    @relation(fields: [policy_id], references: [id], onDelete: SetNull)
+  deliveries EscalationDelivery[]
+
+  @@index([stopped_at])
+  @@map("escalations")
+}
+
+// Satu langkah yang dijadwalkan untuk satu rantai. Seluruh baris dibuat sekali
+// saat rantai mulai, sehingga cron cukup mencari yang `due_at` sudah lewat dan
+// UI bisa menampilkan rencana lengkapnya ("15 menit lagi ke seluruh tim").
+model EscalationDelivery {
+  id            Int       @id @default(autoincrement())
+  escalation_id Int
+  step_order    Int
+  delay_minutes Int
+  due_at        DateTime
+  // pending | sent | failed | skipped | cancelled
+  status        String    @default("pending")
+  sent_at       DateTime?
+
+  // Sasaran disalin dari langkah policy saat rantai dibuat, bukan dibaca ulang
+  // waktu kirim: menyunting policy karena itu tidak mengubah rantai yang sedang
+  // berjalan. Sengaja tanpa foreign key — jadwal atau notifikasi yang dihapus
+  // tidak boleh ikut menghapus riwayat siapa yang pernah dikabari.
+  target          String  @default("oncall") // oncall | channel
+  schedule_id     Int?
+  // Notifikasi yang dipakai: untuk target channel sudah terisi sejak awal,
+  // untuk target oncall baru diisi saat kirim (kontak orang yang bertugas).
+  notification_id Int?
+  // Siapa yang sebenarnya dikabari, dalam bahasa manusia. Baru diketahui saat
+  // kirim, karena yang bertugas bisa berganti sebelum tingkat ini jatuh tempo.
+  target_label    String?
+  error           String?
+
+  escalation Escalation @relation(fields: [escalation_id], references: [id], onDelete: Cascade)
+
+  @@index([status, due_at])
+  @@index([escalation_id, step_order])
+  @@map("escalation_deliveries")
 }

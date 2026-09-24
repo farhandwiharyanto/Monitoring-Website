@@ -15,7 +15,15 @@ export function verifyToken(token) {
   }
 }
 
-export const publicUser = (u) => ({ id: u.id, username: u.username, role: u.role, created_at: u.created_at });
+export const publicUser = (u) => ({
+  id: u.id,
+  username: u.username,
+  role: u.role,
+  created_at: u.created_at,
+  // Kontak pribadi untuk paging on-call. Hanya id-nya — isi konfigurasinya
+  // (token, webhook) tetap tidak pernah keluar dari router notifikasi.
+  oncall_notification_id: u.oncall_notification_id ?? null,
+});
 
 // Token yang diterbitkan sebelum password terakhir diganti dianggap batal,
 // sehingga ganti password langsung mengusir semua sesi lama.

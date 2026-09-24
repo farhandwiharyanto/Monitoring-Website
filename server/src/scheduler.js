@@ -9,6 +9,7 @@ import { STATUS } from "./lib/status.js";
 import { findMonitor } from "./lib/stats.js";
 import { isInMaintenance } from "./lib/maintenance.js";
 import { blockingAncestor } from "./lib/dependency.js";
+import { startEscalation, stopEscalation, runDueDeliveries } from "./lib/escalation.js";
 
 // State in-memory per monitor: kapan check berikutnya, retry count, sedang jalan atau tidak
 const state = new Map(); // id -> { nextRun, retries, running, nextCertCheck }
@@ -22,6 +23,12 @@ export function initScheduler(socketIo) {
   io = socketIo;
   // node-cron: tick setiap detik, jalankan monitor yang sudah jatuh tempo
   cron.schedule("* * * * * *", () => tick().catch((e) => console.error("[scheduler]", e)));
+  // Eskalasi on-call: tingkat berikutnya dikirim saat jedanya jatuh tempo.
+  // Jeda diukur dalam menit, jadi 10 detik sekali sudah lebih dari cukup.
+  // Hanya lokasi primary — dia yang memegang incident dan alert.
+  if (isPrimaryLocation()) {
+    cron.schedule("*/10 * * * * *", () => runDueDeliveries().catch((e) => console.error("[escalation]", e)));
+  }
   // Bersihkan heartbeat & audit log lama setiap hari jam 03:00
   cron.schedule("0 3 * * *", () => {
     pruneOldHeartbeats().catch(console.error);
@@ -180,13 +187,23 @@ export async function applyResult(monitor, { status, message, ms, assertion }, o
     if (!inMaint && !blocker && !incident.notified) {
       await prisma.incident.update({ where: { id: incident.id }, data: { notified: true } });
       notifyMonitorEvent(monitor, "down", beat, incident);
+      // Rantai eskalasi menumpang di atas alert biasa, bukan menggantikannya:
+      // channel monitor tetap dikabari sekarang, sedangkan policy mengatur siapa
+      // lagi yang dipanggil kalau tidak ada yang menangani. Karena dipasang di
+      // dalam cabang yang sama, alert yang ditahan dependency atau maintenance
+      // window tidak pernah memulai eskalasi.
+      startEscalation(monitor, incident).catch((e) => console.error("[escalation]", e));
       // Webhook aksi memicu otomasi di sistem lain (restart, buka ticket).
       // Sengaja tidak di-await: retry-nya tidak boleh menahan scheduler.
       triggerActionWebhook(monitor, "down", { incident, heartbeat: beat }).catch(() => {});
     }
   } else if (status === STATUS.UP && prevStatus === STATUS.DOWN) {
     const incident = await prisma.incident.findFirst({ where: { monitor_id: monitor.id, resolved_at: null }, orderBy: { id: "desc" } });
-    if (incident) await prisma.incident.update({ where: { id: incident.id }, data: { resolved_at: new Date() } });
+    if (incident) {
+      await prisma.incident.update({ where: { id: incident.id }, data: { resolved_at: new Date() } });
+      // Monitor sudah pulih — tingkat yang belum sempat dikirim dibatalkan
+      await stopEscalation(incident.id, "recovered").catch((e) => console.error("[escalation]", e));
+    }
     // Alert "recover" hanya jika alert "down"-nya pernah terkirim. Incident yang
     // alert-nya ditahan dependency karenanya juga tidak mengabari saat pulih.
     if (!inMaint && incident?.notified) {
