@@ -20,6 +20,8 @@ Semua opsional kecuali yang ditandai. Daftar lengkap ada di `.env.example`.
 | `CERT_EXPIRY_WARN_DAYS` | `14` | Ambang badge "segera kedaluwarsa" di UI |
 | `HEARTBEAT_RETENTION_DAYS` | `90` | Heartbeat lebih tua dari ini dihapus tiap hari jam 03:00 |
 | `AUDIT_RETENTION_DAYS` | `365` | Audit log lebih tua dari ini dihapus pada jam yang sama |
+| `SLA_EXCLUDE_MAINTENANCE` | `true` | Downtime saat maintenance window aktif tidak dihitung melanggar SLA |
+| `SLO_DEFAULT_TARGET` | – | Target SLO bawaan untuk monitor baru (persen). Kosong = tanpa target |
 | `LOCATION_NAME` | `primary` | Nama lokasi instance ini; jadi label tiap heartbeat yang ditulisnya |
 | `PRIMARY_LOCATION` | `primary` | Lokasi acuan untuk status, uptime, incident, dan alert |
 | `WORKER_ONLY` | `false` | `true` menjalankan scheduler saja, tanpa API/UI |

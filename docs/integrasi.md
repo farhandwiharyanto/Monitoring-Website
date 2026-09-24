@@ -195,6 +195,11 @@ Metrik yang tersedia:
 | `pulsewatch_monitor_location_response_time_ms` | sda + `location` | Response time per lokasi |
 | `pulsewatch_monitor_location_split` | sda | 1 bila lokasi tidak sepakat |
 | `pulsewatch_monitor_alert_suppressed` | sda + `blocked_by` | 1 bila alert ditahan karena monitor induk sedang down |
+| `pulsewatch_monitor_uptime_month_ratio` | sda | Uptime bulan berjalan (0–1), berbasis durasi incident |
+| `pulsewatch_monitor_downtime_month_seconds` | sda | Total detik downtime bulan berjalan |
+| `pulsewatch_monitor_slo_target` | sda | Target SLO dalam persen |
+| `pulsewatch_monitor_error_budget_remaining_seconds` | sda | Sisa error budget; negatif berarti target terlewat |
+| `pulsewatch_monitor_error_budget_used_ratio` | sda | Bagian error budget yang terpakai (1 = habis) |
 | `pulsewatch_monitor_cert_expiry_timestamp_seconds` | sda + `issuer` | Unix timestamp expiry sertifikat |
 | `pulsewatch_monitor_cert_days_remaining` | sda | Sisa hari sertifikat |
 | `pulsewatch_monitor_cert_chain_valid` | sda | 1 bila rantai sertifikat valid |
@@ -271,6 +276,9 @@ groups:
 | GET | /api/audit-logs[?entity=&action=&actor=&q=&from=&to=] | admin (login) | jejak perubahan; `{rows,total,limit,offset}` |
 | GET | /api/audit-logs/filters · /api/audit-logs/:entity/:id | admin (login) | nilai filter · jejak satu entitas |
 | GET | /api/export/audit?format=&from=&to=&entity= | admin | arsip audit log ke CSV/JSON |
+| GET | /api/reports/sla?month=\|from=&to=&monitor_id=&include_maintenance= | any | uptime & error budget per periode |
+| GET | /api/reports/sla/monthly?months= · /api/reports/sla/months | any | tren bulanan · bulan yang punya data |
+| GET | /api/export/sla?format=&month=\|from=&to= | any | laporan SLA ke CSV/JSON |
 
 Status monitor: `0` down · `1` up · `2` pending · `3` paused · `4` maintenance.
 Heartbeat punya flag `maintenance`, kolom `location`, serta `assertion_ok` / `assertion_message`.

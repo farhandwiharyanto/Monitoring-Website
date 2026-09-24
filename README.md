@@ -48,6 +48,7 @@ Sudah termasuk Postgres, dan migration dijalankan otomatis saat start.
 - API key read-only / read-write untuk akses dari sistem lain
 - Export CSV/JSON dan endpoint `/metrics` untuk Prometheus
 - Audit log: jejak siapa mengubah apa, kapan, dan dari IP mana
+- Laporan SLA bulanan: uptime, error budget per target SLO, MTTR, dan ekspornya
 
 **Antarmuka**
 - Tema gelap & terang, dwibahasa Indonesia / English
@@ -63,6 +64,7 @@ Sudah termasuk Postgres, dan migration dijalankan otomatis saat start.
 | **[Monitoring](docs/monitoring.md)** | Monitor push, HTTP check lanjutan, multi-location, dependency antar-monitor |
 | **[Integrasi](docs/integrasi.md)** | API key, webhook dua arah, export, Prometheus, daftar endpoint |
 | **[Status page](docs/status-page.md)** | Halaman publik, incident update, custom domain (nginx & Traefik) |
+| **[Laporan SLA](docs/laporan.md)** | Cara uptime dihitung, error budget, maintenance, ekspor |
 | **[Audit log](docs/audit-log.md)** | Apa yang dicatat, penopengan kredensial, endpoint, arsip |
 
 ---
@@ -91,7 +93,7 @@ server/
   src/checks/            http, tcp, ping, dns, cert
   src/notifications/     telegram, discord, slack, googlechat, ntfy, email, webhook
   src/routes/            endpoint REST
-  src/lib/               auth, apikey, crypto, assertion, stats, ratelimit, security, dependency, audit
+  src/lib/               auth, apikey, crypto, assertion, stats, ratelimit, security, dependency, audit, sla
 client/src/
   pages/                 halaman dashboard & status page publik
   components/            komponen yang dipakai bersama

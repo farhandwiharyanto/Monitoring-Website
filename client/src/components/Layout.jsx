@@ -1,5 +1,5 @@
 import { NavLink, Link } from "react-router-dom";
-import { Activity, LayoutDashboard, Bell, Globe, Settings, LogOut, Plus, Wifi, WifiOff, List, Wrench, Users, ShieldCheck, Eye, ScrollText } from "lucide-react";
+import { Activity, LayoutDashboard, Bell, Globe, Settings, LogOut, Plus, Wifi, WifiOff, List, Wrench, Users, ShieldCheck, Eye, ScrollText, BarChart3 } from "lucide-react";
 import clsx from "clsx";
 import { useMonitors } from "../lib/monitors.jsx";
 import { useAuth } from "../lib/auth.jsx";
@@ -12,6 +12,7 @@ const nav = [
   { to: "/maintenance", key: "nav.maintenance", icon: Wrench },
   { to: "/notifications", key: "nav.notifications", icon: Bell, admin: true },
   { to: "/status-pages", key: "nav.statusPages", icon: Globe },
+  { to: "/reports", key: "nav.reports", icon: BarChart3 },
   { to: "/users", key: "nav.users", icon: Users, admin: true },
   { to: "/audit", key: "nav.audit", icon: ScrollText, admin: true },
   { to: "/settings", key: "nav.settings", icon: Settings },

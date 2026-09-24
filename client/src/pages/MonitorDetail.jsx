@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { Pencil, Trash2, Pause, Play, ArrowLeft, ExternalLink, Wrench, Plus, ShieldCheck, ShieldAlert, RefreshCw, Copy, Download, Webhook, Globe2, CheckCircle2, XCircle, AlertTriangle, Zap, Bot, MessageSquarePlus, X, Network } from "lucide-react";
+import { Pencil, Trash2, Pause, Play, ArrowLeft, ExternalLink, Wrench, Plus, ShieldCheck, ShieldAlert, RefreshCw, Copy, Download, Webhook, Globe2, CheckCircle2, XCircle, AlertTriangle, Zap, Bot, MessageSquarePlus, X, Network, Target } from "lucide-react";
 import clsx from "clsx";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { api, download } from "../lib/api.js";
@@ -42,6 +42,7 @@ export default function MonitorDetail() {
   const [updateForm, setUpdateForm] = useState(null); // { incidentId, status, message }
   const [copied, setCopied] = useState(false);
   const [children, setChildren] = useState([]);
+  const [sla, setSla] = useState(null);
 
   const load = () =>
     Promise.all([
@@ -55,8 +56,10 @@ export default function MonitorDetail() {
       isAdmin ? api(`/monitors/${id}/webhook-logs`).catch(() => []) : Promise.resolve([]),
       api(`/incidents?monitor_id=${id}&limit=100`).catch(() => []),
       api(`/monitors/${id}/children`).catch(() => []),
+      api(`/reports/sla?monitor_id=${id}`).catch(() => null),
     ])
-      .then(([m, b, i, e, w, ev, wl, inc, ch]) => {
+      .then(([m, b, i, e, w, ev, wl, inc, ch, sl]) => {
+        setSla(sl?.rows?.[0] ?? null);
         setMonitor(m); setBeats(b); setEvents(e); setWindows(w);
         setAutoEvents(ev); setWebhookLogs(wl); setChildren(ch);
         // Pakai incident yang sudah membawa updates; fallback ke daftar polos
@@ -273,6 +276,45 @@ export default function MonitorDetail() {
               <p className={clsx("text-xs mt-1", monitor.last_assertion_ok ? "text-up" : "text-down")}>{monitor.last_assertion_message}</p>
             )}
           </div>
+        </div>
+      )}
+
+      {/* SLO & error budget bulan berjalan */}
+      {sla && (
+        <div className="card p-5 space-y-3">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <h2 className="font-medium text-fg text-sm flex items-center gap-2">
+              <Target size={15} className="text-accent" /> {t("report.sloCard")}
+            </h2>
+            <Link to="/reports" className="text-xs text-accent hover:underline">{t("common.viewAll")}</Link>
+          </div>
+
+          <div className="flex items-baseline gap-4 flex-wrap">
+            <span className={clsx("text-2xl font-semibold tabular-nums", sla.error_budget && !sla.error_budget.met ? "text-down" : "text-fg")}>
+              {fmtPct(sla.uptime)}
+            </span>
+            {sla.slo_target !== null && <span className="text-sm text-muted">{t("report.sloTarget")} {sla.slo_target}%</span>}
+            <span className="text-sm text-muted">{fmtDuration(sla.down_seconds)} down · {sla.incidents} incident</span>
+          </div>
+
+          {sla.error_budget ? (
+            <div>
+              <div className="h-1.5 rounded-full bg-panel2 overflow-hidden">
+                <div
+                  className={clsx("h-full rounded-full", sla.error_budget.used_percent >= 100 ? "bg-down" : sla.error_budget.used_percent >= 75 ? "bg-pending" : "bg-up")}
+                  style={{ width: `${Math.min(100, sla.error_budget.used_percent)}%` }}
+                />
+              </div>
+              <p className={clsx("text-xs mt-1.5", sla.error_budget.remaining_seconds < 0 ? "text-down" : "text-muted")}>
+                {t("report.sloBudgetUsed", { percent: sla.error_budget.used_percent })} ·{" "}
+                {sla.error_budget.remaining_seconds >= 0
+                  ? t("report.budgetLeft", { duration: fmtDuration(sla.error_budget.remaining_seconds) })
+                  : t("report.budgetOver", { duration: fmtDuration(-sla.error_budget.remaining_seconds) })}
+              </p>
+            </div>
+          ) : (
+            <p className="text-xs text-muted">{t("report.sloNoTarget")}</p>
+          )}
         </div>
       )}
 

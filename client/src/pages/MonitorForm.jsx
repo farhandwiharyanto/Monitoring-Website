@@ -6,6 +6,7 @@ import { api } from "../lib/api.js";
 import { useMonitors } from "../lib/monitors.jsx";
 import { useI18n } from "../lib/i18n.jsx";
 import TagChip from "../components/TagChip.jsx";
+import { fmtDuration } from "../lib/format.js";
 
 const TYPES = [
   { v: "http", label: "form.typeHttp", desc: "form.typeHttpDesc" },
@@ -29,6 +30,8 @@ const empty = {
   push_grace_seconds: 60, check_cert: true,
   // Dependency: "" = tidak punya induk
   parent_id: "",
+  // Target SLO dalam persen; "" = tanpa target
+  slo_target: "",
   // HTTP lanjutan
   auth_type: "none", auth_username: "", auth_password: "", auth_token: "",
   assertion_path: "", assertion_operator: "", assertion_value: "",
@@ -76,6 +79,7 @@ export default function MonitorForm() {
           port: m.port ?? "", url: m.url ?? "", hostname: m.hostname ?? "",
           keyword: m.keyword ?? "", dns_expected: m.dns_expected ?? "",
           parent_id: m.parent_id ?? "",
+          slo_target: m.slo_target ?? "",
           auth_type: m.auth_type || "none",
           auth_username: m.auth_username ?? "",
           // Password & token tidak pernah dikirim server; kosong = pertahankan yang tersimpan
@@ -109,6 +113,13 @@ export default function MonitorForm() {
     }
   }
   const parentOptions = (monitors || []).filter((m) => m.id !== selfId && !descendants.has(m.id));
+
+  // "99.9%" sulit dibayangkan; ditampilkan juga sebagai jatah downtime per 30 hari
+  const sloValue = Number(form.slo_target);
+  const sloBudget =
+    form.slo_target !== "" && Number.isFinite(sloValue) && sloValue > 0 && sloValue < 100
+      ? t("slo.budgetPreview", { target: sloValue, duration: fmtDuration(Math.round(((100 - sloValue) / 100) * 30 * 86400)) })
+      : null;
   const parentOf = (monitors || []).find((m) => m.id === Number(form.parent_id));
   const addTag = (name) => {
     const n = String(name || tagInput).trim().toLowerCase().replace(/\s+/g, "-");
@@ -225,6 +236,16 @@ export default function MonitorForm() {
           )}
         </div>
         <p className="text-xs text-muted -mt-2">{isPush ? t("form.pushHint") : t("form.retryHint")}</p>
+
+        <div>
+          <label className="label">{t("slo.label")}</label>
+          <input
+            className="input max-w-[12rem]" type="number" step="0.001" min="0" max="99.999"
+            value={form.slo_target} onChange={set("slo_target")} placeholder={t("slo.placeholder")}
+          />
+          <p className="text-xs text-muted mt-1.5">{t("slo.hint")}</p>
+          {sloBudget && <p className="text-xs text-accent mt-1">{sloBudget}</p>}
+        </div>
         {form.type === "http" && (
           <>
             <div className="grid md:grid-cols-2 gap-4">
