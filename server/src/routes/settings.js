@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { prisma } from "../db.js";
 import { requireAuth, requireAdmin } from "../lib/auth.js";
+import { recordAudit, diffFields } from "../lib/audit.js";
 
 // Pengaturan tampilan global: jadi nilai awal untuk user yang belum pernah memilih.
 export const settingsRouter = Router();
@@ -32,5 +33,10 @@ settingsRouter.put("/", requireAuth, requireAdmin, async (req, res) => {
     next.theme = req.body.theme;
   }
   await prisma.setting.upsert({ where: { key: KEY }, update: { value: next }, create: { key: KEY, value: next } });
+  recordAudit(req, {
+    action: "settings.update", entity: "settings", entityName: KEY,
+    summary: `Tampilan default instance diubah (bahasa ${next.language}, tema ${next.theme})`,
+    changes: diffFields(current, next),
+  });
   res.json(next);
 });

@@ -3,6 +3,7 @@ import { prisma } from "../db.js";
 import { config } from "../config.js";
 import { requireAuth, requireAdmin, denyApiKey } from "../lib/auth.js";
 import { generateKey, publicApiKey, SCOPES } from "../lib/apikey.js";
+import { recordAudit } from "../lib/audit.js";
 
 // Manajemen API key: admin yang login saja. Sebuah API key tidak boleh
 // membuat atau mencabut API key lain (pencegahan eskalasi hak akses).
@@ -27,6 +28,10 @@ apiKeysRouter.post("/", async (req, res) => {
     data: { label, scope, key_hash, prefix, created_by: req.user.username },
   });
 
+  recordAudit(req, {
+    action: "api_key.create", entity: "api_key", entityId: row.id, entityName: row.label,
+    summary: `API key "${row.label}" (${row.scope}) dibuat, prefix ${row.prefix}`,
+  });
   // Satu-satunya kesempatan melihat kunci penuh — setelah ini hanya hash yang tersimpan
   res.status(201).json({ ...publicApiKey(row), key });
 });
@@ -37,10 +42,23 @@ apiKeysRouter.post("/:id/revoke", async (req, res) => {
   const row = await prisma.apiKey.findUnique({ where: { id } });
   if (!row) return res.status(404).json({ error: "API key tidak ditemukan" });
   if (row.revoked_at) return res.json(publicApiKey(row));
-  res.json(publicApiKey(await prisma.apiKey.update({ where: { id }, data: { revoked_at: new Date() } })));
+  const revoked = await prisma.apiKey.update({ where: { id }, data: { revoked_at: new Date() } });
+  recordAudit(req, {
+    action: "api_key.revoke", entity: "api_key", entityId: id, entityName: row.label,
+    summary: `API key "${row.label}" (${row.scope}) dicabut`,
+  });
+  res.json(publicApiKey(revoked));
 });
 
 apiKeysRouter.delete("/:id", async (req, res) => {
-  await prisma.apiKey.delete({ where: { id: Number(req.params.id) } }).catch(() => {});
+  const id = Number(req.params.id);
+  const existing = await prisma.apiKey.findUnique({ where: { id } });
+  await prisma.apiKey.delete({ where: { id } }).catch(() => {});
+  if (existing) {
+    recordAudit(req, {
+      action: "api_key.delete", entity: "api_key", entityId: id, entityName: existing.label,
+      summary: `API key "${existing.label}" dihapus dari daftar`,
+    });
+  }
   res.json({ ok: true });
 });

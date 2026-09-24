@@ -3,6 +3,7 @@ import { prisma } from "../db.js";
 import { requireAuth, requireAdmin } from "../lib/auth.js";
 import { decorateMonitors, monitorInclude } from "../lib/stats.js";
 import { config } from "../config.js";
+import { recordAudit, diffFields } from "../lib/audit.js";
 
 export const statusPagesRouter = Router();   // admin (butuh auth)
 export const publicStatusRouter = Router();  // publik tanpa login
@@ -110,6 +111,10 @@ statusPagesRouter.post("/", requireAdmin, async (req, res) => {
   });
   await syncMonitors(page.id, monitor_ids);
   await syncTags(page.id, req.body?.tag_ids);
+  recordAudit(req, {
+    action: "status_page.create", entity: "status_page", entityId: page.id, entityName: page.title,
+    summary: `Status page "${page.title}" dibuat di /status/${page.slug}`,
+  });
   res.status(201).json(shape(await prisma.statusPage.findUnique({ where: { id: page.id }, include })));
 });
 statusPagesRouter.put("/:id", requireAdmin, async (req, res) => {
@@ -125,22 +130,33 @@ statusPagesRouter.put("/:id", requireAdmin, async (req, res) => {
   if (look.custom_domain && (await prisma.statusPage.findFirst({ where: { custom_domain: look.custom_domain, NOT: { id } } }))) {
     return res.status(400).json({ error: "Domain sudah dipakai status page lain" });
   }
-  await prisma.statusPage.update({
-    where: { id },
-    data: {
-      slug,
-      title: title ? String(title).slice(0, 120) : existing.title,
-      description: description !== undefined ? (description ? String(description).slice(0, 500) : null) : existing.description,
-      published: published !== false,
-      ...look,
-    },
-  });
+  const data = {
+    slug,
+    title: title ? String(title).slice(0, 120) : existing.title,
+    description: description !== undefined ? (description ? String(description).slice(0, 500) : null) : existing.description,
+    published: published !== false,
+    ...look,
+  };
+  await prisma.statusPage.update({ where: { id }, data });
   await syncMonitors(id, monitor_ids);
   await syncTags(id, req.body?.tag_ids);
+  recordAudit(req, {
+    action: "status_page.update", entity: "status_page", entityId: id, entityName: data.title,
+    summary: `Status page "${data.title}" diubah`,
+    changes: diffFields(existing, data),
+  });
   res.json(shape(await prisma.statusPage.findUnique({ where: { id }, include })));
 });
 statusPagesRouter.delete("/:id", requireAdmin, async (req, res) => {
-  await prisma.statusPage.delete({ where: { id: Number(req.params.id) } }).catch(() => {});
+  const id = Number(req.params.id);
+  const existing = await prisma.statusPage.findUnique({ where: { id } });
+  await prisma.statusPage.delete({ where: { id } }).catch(() => {});
+  if (existing) {
+    recordAudit(req, {
+      action: "status_page.delete", entity: "status_page", entityId: id, entityName: existing.title,
+      summary: `Status page "${existing.title}" (/status/${existing.slug}) dihapus`,
+    });
+  }
   res.json({ ok: true });
 });
 

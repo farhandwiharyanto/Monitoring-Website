@@ -2,6 +2,7 @@ import { Router } from "express";
 import { prisma } from "../db.js";
 import { requireAuth, requireAdmin } from "../lib/auth.js";
 import { decorateWindow } from "../lib/maintenance.js";
+import { recordAudit, diffFields, snapshotFields } from "../lib/audit.js";
 
 export const maintenanceRouter = Router();
 maintenanceRouter.use(requireAuth);
@@ -41,7 +42,13 @@ maintenanceRouter.post("/", requireAdmin, async (req, res) => {
   const { errors, data } = validate(req.body || {});
   if (!(await prisma.monitor.findUnique({ where: { id: data.monitor_id || 0 } }))) errors.push("Monitor tidak ditemukan");
   if (errors.length) return res.status(400).json({ error: errors.join(", ") });
-  res.status(201).json(decorateWindow(await prisma.maintenanceWindow.create({ data, include: withMonitor })));
+  const created = await prisma.maintenanceWindow.create({ data, include: withMonitor });
+  recordAudit(req, {
+    action: "maintenance.create", entity: "maintenance", entityId: created.id, entityName: created.title,
+    summary: `Maintenance window "${created.title}" dibuat untuk monitor "${created.monitor?.name}"`,
+    changes: snapshotFields(data),
+  });
+  res.status(201).json(decorateWindow(created));
 });
 
 maintenanceRouter.put("/:id", requireAdmin, async (req, res) => {
@@ -50,10 +57,24 @@ maintenanceRouter.put("/:id", requireAdmin, async (req, res) => {
   if (!existing) return res.status(404).json({ error: "Maintenance window tidak ditemukan" });
   const { errors, data } = validate({ ...existing, ...req.body });
   if (errors.length) return res.status(400).json({ error: errors.join(", ") });
-  res.json(decorateWindow(await prisma.maintenanceWindow.update({ where: { id }, data, include: withMonitor })));
+  const updated = await prisma.maintenanceWindow.update({ where: { id }, data, include: withMonitor });
+  recordAudit(req, {
+    action: "maintenance.update", entity: "maintenance", entityId: id, entityName: updated.title,
+    summary: `Maintenance window "${updated.title}" diubah`,
+    changes: diffFields(existing, data),
+  });
+  res.json(decorateWindow(updated));
 });
 
 maintenanceRouter.delete("/:id", requireAdmin, async (req, res) => {
-  await prisma.maintenanceWindow.delete({ where: { id: Number(req.params.id) } }).catch(() => {});
+  const id = Number(req.params.id);
+  const existing = await prisma.maintenanceWindow.findUnique({ where: { id } });
+  await prisma.maintenanceWindow.delete({ where: { id } }).catch(() => {});
+  if (existing) {
+    recordAudit(req, {
+      action: "maintenance.delete", entity: "maintenance", entityId: id, entityName: existing.title,
+      summary: `Maintenance window "${existing.title}" dihapus`,
+    });
+  }
   res.json({ ok: true });
 });

@@ -2,6 +2,7 @@ import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { prisma, ROLES } from "../db.js";
 import { requireAuth, requireAdmin, publicUser } from "../lib/auth.js";
+import { recordAudit, diffFields } from "../lib/audit.js";
 
 // Manajemen user — admin only
 export const usersRouter = Router();
@@ -18,6 +19,10 @@ usersRouter.post("/", async (req, res) => {
   if (!ROLES.includes(role)) return res.status(400).json({ error: "Role tidak valid" });
   if (await prisma.user.findUnique({ where: { username } })) return res.status(400).json({ error: "Username sudah dipakai" });
   const user = await prisma.user.create({ data: { username, role, password_hash: bcrypt.hashSync(password, 10) } });
+  recordAudit(req, {
+    action: "user.create", entity: "user", entityId: user.id, entityName: user.username,
+    summary: `User "${user.username}" dibuat dengan role ${user.role}`,
+  });
   res.status(201).json(publicUser(user));
 });
 
@@ -38,7 +43,15 @@ usersRouter.put("/:id", async (req, res) => {
     // Reset password oleh admin juga membatalkan sesi user tersebut
     data.password_changed_at = new Date();
   }
-  res.json(publicUser(await prisma.user.update({ where: { id }, data })));
+  const updated = await prisma.user.update({ where: { id }, data });
+  recordAudit(req, {
+    action: "user.update", entity: "user", entityId: id, entityName: updated.username,
+    summary: data.password_hash
+      ? `Password "${updated.username}" direset admin — sesinya ikut dibatalkan`
+      : `User "${updated.username}" diubah`,
+    changes: diffFields(user, data),
+  });
+  res.json(publicUser(updated));
 });
 
 usersRouter.delete("/:id", async (req, res) => {
@@ -49,5 +62,9 @@ usersRouter.delete("/:id", async (req, res) => {
   if (!target) return res.status(404).json({ error: "User tidak ditemukan" });
   if (target.role === "admin" && admins <= 1) return res.status(400).json({ error: "Harus tersisa minimal satu admin" });
   await prisma.user.delete({ where: { id } });
+  recordAudit(req, {
+    action: "user.delete", entity: "user", entityId: id, entityName: target.username,
+    summary: `User "${target.username}" (${target.role}) dihapus`,
+  });
   res.json({ ok: true });
 });

@@ -83,6 +83,9 @@ export const config = {
   encryptionKey: process.env.ENCRYPTION_KEY || "",
   // Retensi heartbeat (hari) — dibersihkan tiap hari jam 03:00.
   heartbeatRetentionDays: Number(process.env.HEARTBEAT_RETENTION_DAYS || 90),
+  // Retensi audit log (hari). Lebih panjang dari heartbeat karena yang disimpan
+  // adalah jejak perubahan konfigurasi, bukan data deret waktu.
+  auditRetentionDays: Number(process.env.AUDIT_RETENTION_DAYS || 365),
 };
 
 // Instance ini yang memegang keputusan status/incident/alert?

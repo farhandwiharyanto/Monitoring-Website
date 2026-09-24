@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { prisma } from "../db.js";
 import { requireAuth, requireAdmin } from "../lib/auth.js";
+import { recordAudit, diffFields } from "../lib/audit.js";
 
 // Kabar manual yang ditulis admin selama incident berlangsung. Murni untuk
 // komunikasi ke pengguna — status incident sendiri tetap ditentukan heartbeat,
@@ -23,7 +24,18 @@ incidentsRouter.get("/", async (req, res) => {
     orderBy: { started_at: "desc" },
     take: Math.min(200, Math.max(1, Number(req.query.limit) || 50)),
   });
-  res.json(rows);
+  // Nama monitor induk yang menahan alert, supaya UI bisa menyebutnya langsung
+  const blockerIds = [...new Set(rows.map((r) => r.suppressed_by_id).filter(Boolean))];
+  const names = new Map(
+    (blockerIds.length
+      ? await prisma.monitor.findMany({ where: { id: { in: blockerIds } }, select: { id: true, name: true } })
+      : []
+    ).map((m) => [m.id, m.name])
+  );
+  res.json(rows.map((r) => ({
+    ...r,
+    suppressed_by: r.suppressed_by_id ? { id: r.suppressed_by_id, name: names.get(r.suppressed_by_id) || null } : null,
+  })));
 });
 
 incidentsRouter.get("/:id/updates", async (req, res) => {
@@ -47,6 +59,10 @@ incidentsRouter.post("/:id/updates", requireAdmin, async (req, res) => {
   const update = await prisma.incidentUpdate.create({
     data: { incident_id: incidentId, status, message, author: req.user?.username || null },
   });
+  recordAudit(req, {
+    action: "incident_update.create", entity: "incident", entityId: incidentId,
+    summary: `Kabar incident #${incidentId} ditulis (${status})`,
+  });
   res.status(201).json(update);
 });
 
@@ -66,12 +82,25 @@ incidentsRouter.put("/:id/updates/:updateId", requireAdmin, async (req, res) => 
     if (!message) return res.status(400).json({ error: "Pesan update wajib diisi" });
     data.message = message;
   }
-  res.json(await prisma.incidentUpdate.update({ where: { id }, data }));
+  const updated = await prisma.incidentUpdate.update({ where: { id }, data });
+  recordAudit(req, {
+    action: "incident_update.edit", entity: "incident", entityId: existing.incident_id,
+    summary: `Kabar incident #${existing.incident_id} disunting`,
+    changes: diffFields(existing, data),
+  });
+  res.json(updated);
 });
 
 incidentsRouter.delete("/:id/updates/:updateId", requireAdmin, async (req, res) => {
-  await prisma.incidentUpdate
-    .deleteMany({ where: { id: Number(req.params.updateId), incident_id: Number(req.params.id) } })
-    .catch(() => {});
+  const incidentId = Number(req.params.id);
+  const { count } = await prisma.incidentUpdate
+    .deleteMany({ where: { id: Number(req.params.updateId), incident_id: incidentId } })
+    .catch(() => ({ count: 0 }));
+  if (count) {
+    recordAudit(req, {
+      action: "incident_update.delete", entity: "incident", entityId: incidentId,
+      summary: `Kabar incident #${incidentId} dihapus`,
+    });
+  }
   res.json({ ok: true });
 });

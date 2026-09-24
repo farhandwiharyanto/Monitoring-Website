@@ -86,6 +86,12 @@ metricsRouter.get("/", async (req, res) => {
     "1 bila lokasi tidak sepakat (sebagian up, sebagian down)", "gauge",
     monitors.map((m) => [labels(base(m)), m.location_split ? 1 : 0]));
 
+  // Alert yang sedang ditahan karena induknya down — berguna untuk membedakan
+  // "sunyi karena sehat" dari "sunyi karena sengaja didiamkan".
+  metric(lines, "pulsewatch_monitor_alert_suppressed",
+    "1 bila alert monitor ditahan karena monitor induknya sedang down", "gauge",
+    monitors.map((m) => [labels({ ...base(m), blocked_by: m.blocked_by?.name }), m.alert_suppressed ? 1 : 0]));
+
   metric(lines, "pulsewatch_monitor_cert_expiry_timestamp_seconds",
     "Unix timestamp kedaluwarsa sertifikat TLS", "gauge",
     monitors.filter((m) => m.cert_expires_at)

@@ -10,6 +10,8 @@ import { ASSERTION_OPERATORS, operatorNeedsValue, parsePath, describeAssertion }
 import { newPushToken } from "./push.js";
 import { triggerActionWebhook } from "../lib/actionWebhook.js";
 import { upsertTags } from "./tags.js";
+import { wouldCycle, chainDepth, MAX_DEPTH } from "../lib/dependency.js";
+import { recordAudit, diffFields, snapshotFields } from "../lib/audit.js";
 
 export const monitorsRouter = Router();
 monitorsRouter.use(requireAuth);
@@ -206,6 +208,30 @@ function validate(body, existing = null) {
   return { m, errors };
 }
 
+// Monitor induk divalidasi terpisah karena perlu membaca DB: induk harus ada,
+// bukan dirinya sendiri, tidak membentuk lingkaran, dan rantainya tidak terlalu dalam.
+// undefined = field tidak dikirim (biarkan apa adanya), null = lepas dari induk.
+async function resolveParent(body, selfId, errors) {
+  if (body.parent_id === undefined) return undefined;
+  if (body.parent_id === null || body.parent_id === "") return null;
+
+  const parentId = Number(body.parent_id);
+  if (!Number.isFinite(parentId)) { errors.push("Monitor induk tidak valid"); return undefined; }
+  if (selfId && parentId === selfId) { errors.push("Monitor tidak bisa menjadi induk dirinya sendiri"); return undefined; }
+
+  const parent = await prisma.monitor.findUnique({ where: { id: parentId }, select: { id: true, name: true } });
+  if (!parent) { errors.push("Monitor induk tidak ditemukan"); return undefined; }
+  if (selfId && (await wouldCycle(selfId, parentId))) {
+    errors.push(`"${parent.name}" sudah bergantung pada monitor ini — hubungan induk akan membentuk lingkaran`);
+    return undefined;
+  }
+  if ((await chainDepth(parentId)) + 1 >= MAX_DEPTH) {
+    errors.push(`Rantai dependency maksimal ${MAX_DEPTH} tingkat`);
+    return undefined;
+  }
+  return parentId;
+}
+
 // Relasi notifikasi & tag: hanya disentuh kalau field dikirim (null = biarkan)
 async function syncRelations(monitorId, body) {
   if (Array.isArray(body.notification_ids)) {
@@ -241,11 +267,19 @@ monitorsRouter.get("/locations", async (req, res) => res.json(await knownLocatio
 
 monitorsRouter.post("/", requireAdmin, async (req, res) => {
   const { m, errors } = validate(req.body, null);
+  const parentId = await resolveParent(req.body, null, errors);
   if (errors.length) return res.status(400).json({ error: errors.join(", ") });
   // Monitor push langsung diberi token; tipe lain tidak memerlukannya
-  const created = await prisma.monitor.create({ data: { ...m, push_token: m.type === "push" ? newPushToken() : null } });
+  const created = await prisma.monitor.create({
+    data: { ...m, parent_id: parentId ?? null, push_token: m.type === "push" ? newPushToken() : null },
+  });
   await syncRelations(created.id, req.body);
   scheduleNow(created.id);
+  recordAudit(req, {
+    action: "monitor.create", entity: "monitor", entityId: created.id, entityName: created.name,
+    summary: `Monitor ${created.type} "${created.name}" dibuat`,
+    changes: snapshotFields(created),
+  });
   res.status(201).json(shape(await findMonitor(created.id), req.user));
 });
 
@@ -271,27 +305,36 @@ monitorsRouter.put("/:id", requireAdmin, async (req, res) => {
   const existing = await prisma.monitor.findUnique({ where: { id } });
   if (!existing) return res.status(404).json({ error: "Monitor tidak ditemukan" });
   const { m, errors } = validate({ ...existing, ...req.body }, existing);
+  const parentId = await resolveParent(req.body, id, errors);
   if (errors.length) return res.status(400).json({ error: errors.join(", ") });
   // Berganti tipe ke/dari push: token dibuat saat dibutuhkan, dibuang saat tidak
   const data = { ...m };
+  if (parentId !== undefined) data.parent_id = parentId;
   if (m.type === "push" && !existing.push_token) data.push_token = newPushToken();
   if (m.type !== "push" && existing.push_token) data.push_token = null;
-  await prisma.monitor.update({ where: { id }, data });
+  const updated = await prisma.monitor.update({ where: { id }, data });
   await syncRelations(id, req.body);
   m.active ? scheduleNow(id) : unschedule(id);
+  recordAudit(req, {
+    action: "monitor.update", entity: "monitor", entityId: id, entityName: updated.name,
+    summary: `Monitor "${updated.name}" diubah`,
+    changes: diffFields(existing, data),
+  });
   res.json(shape(await findMonitor(id), req.user));
 });
 
 monitorsRouter.post("/:id/pause", requireAdmin, async (req, res) => {
   const id = Number(req.params.id);
-  await prisma.monitor.update({ where: { id }, data: { active: false } });
+  const m = await prisma.monitor.update({ where: { id }, data: { active: false } });
   unschedule(id);
+  recordAudit(req, { action: "monitor.pause", entity: "monitor", entityId: id, entityName: m.name, summary: `Monitor "${m.name}" dijeda` });
   res.json(shape(await findMonitor(id), req.user));
 });
 monitorsRouter.post("/:id/resume", requireAdmin, async (req, res) => {
   const id = Number(req.params.id);
-  await prisma.monitor.update({ where: { id }, data: { active: true } });
+  const m = await prisma.monitor.update({ where: { id }, data: { active: true } });
   scheduleNow(id);
+  recordAudit(req, { action: "monitor.resume", entity: "monitor", entityId: id, entityName: m.name, summary: `Monitor "${m.name}" dijalankan lagi` });
   res.json(shape(await findMonitor(id), req.user));
 });
 
@@ -303,6 +346,10 @@ monitorsRouter.post("/:id/reset-push-token", requireAdmin, async (req, res) => {
   if (monitor.type !== "push") return res.status(400).json({ error: "Hanya untuk monitor tipe push" });
   await prisma.monitor.update({ where: { id }, data: { push_token: newPushToken() } });
   scheduleNow(id);
+  recordAudit(req, {
+    action: "monitor.reset_push_token", entity: "monitor", entityId: id, entityName: monitor.name,
+    summary: `Token push "${monitor.name}" dibuat ulang — URL lama tidak berlaku lagi`,
+  });
   res.json(shape(await findMonitor(id), req.user));
 });
 
@@ -317,8 +364,18 @@ monitorsRouter.post("/:id/cert", requireAdmin, async (req, res) => {
 
 monitorsRouter.delete("/:id", requireAdmin, async (req, res) => {
   const id = Number(req.params.id);
+  const existing = await prisma.monitor.findUnique({ where: { id } });
+  // Monitor yang jadi induk: anaknya tidak ikut terhapus, hanya lepas (SET NULL)
+  const orphaned = await prisma.monitor.count({ where: { parent_id: id } });
   await prisma.monitor.delete({ where: { id } }).catch(() => {});
   unschedule(id);
+  if (existing) {
+    recordAudit(req, {
+      action: "monitor.delete", entity: "monitor", entityId: id, entityName: existing.name,
+      summary: `Monitor "${existing.name}" dihapus` + (orphaned ? ` — ${orphaned} monitor anak jadi mandiri` : ""),
+      changes: snapshotFields(existing),
+    });
+  }
   res.json({ ok: true });
 });
 
@@ -346,7 +403,24 @@ monitorsRouter.get("/:id/heartbeats", async (req, res) => {
 });
 
 monitorsRouter.get("/:id/incidents", async (req, res) => {
-  res.json(await prisma.incident.findMany({ where: { monitor_id: Number(req.params.id) }, orderBy: { started_at: "desc" }, take: 100 }));
+  const rows = await prisma.incident.findMany({ where: { monitor_id: Number(req.params.id) }, orderBy: { started_at: "desc" }, take: 100 });
+  // Nama induk yang menahan alert ikut dikirim supaya UI tidak perlu query lagi
+  const ids = [...new Set(rows.map((r) => r.suppressed_by_id).filter(Boolean))];
+  const names = new Map(
+    (ids.length ? await prisma.monitor.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } }) : []).map((m) => [m.id, m.name])
+  );
+  res.json(rows.map((r) => ({ ...r, suppressed_by: r.suppressed_by_id ? { id: r.suppressed_by_id, name: names.get(r.suppressed_by_id) || null } : null })));
+});
+
+// Monitor yang bergantung pada monitor ini (anak langsung), lengkap dengan statusnya
+monitorsRouter.get("/:id/children", async (req, res) => {
+  const rows = await prisma.monitor.findMany({
+    where: { parent_id: Number(req.params.id) },
+    include: monitorInclude,
+    orderBy: { name: "asc" },
+  });
+  const decorated = await decorateMonitors(rows, { beats: 1, locations: false });
+  res.json(decorated.map((m) => shape(m, req.user)));
 });
 
 // Event penting (perubahan status) untuk list "Important events".

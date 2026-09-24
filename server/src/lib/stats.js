@@ -3,6 +3,7 @@ import { prisma } from "../db.js";
 import { config } from "../config.js";
 import { activeMaintenanceMap } from "./maintenance.js";
 import { decryptSecret } from "./crypto.js";
+import { dependencyInfo } from "./dependency.js";
 
 const HOUR = 3600_000;
 
@@ -97,12 +98,13 @@ export const monitorInclude = {
 // Bentuk monitor untuk API: status terakhir, heartbeat, uptime, tag, maintenance, lokasi
 export async function decorateMonitors(monitors, opts = {}) {
   const ids = monitors.map((m) => m.id);
-  const [beats, d24, d30, maint, locs] = await Promise.all([
+  const [beats, d24, d30, maint, locs, deps] = await Promise.all([
     lastBeatsMap(ids, opts.beats ?? 20),
     uptimeMap(ids, 24),
     uptimeMap(ids, 24 * 30),
     activeMaintenanceMap(ids),
     opts.locations === false ? Promise.resolve(new Map()) : locationStatusMap(ids),
+    dependencyInfo(ids),
   ]);
   return monitors.map((m) => {
     const hb = beats.get(m.id);
@@ -117,6 +119,10 @@ export async function decorateMonitors(monitors, opts = {}) {
     const locations = locs.get(m.id) || [];
     const fresh = locations.filter((l) => !l.stale);
     const split = fresh.length > 1 && fresh.some((l) => l.status === 1) && fresh.some((l) => l.status === 0);
+
+    // Dependency: induk langsung, induk terdekat yang sedang down, dan berapa
+    // monitor yang bergantung pada monitor ini.
+    const dep = deps.get(m.id) || { parent: null, blocked_by: null, children_count: 0 };
 
     return {
       ...rest,
@@ -141,6 +147,11 @@ export async function decorateMonitors(monitors, opts = {}) {
       auth_username: basicAuthUsername(m),
       locations,
       location_split: split,
+      parent: dep.parent,
+      // Induk sedang down: alert & webhook aksi monitor ini ditahan sampai induk pulih
+      blocked_by: dep.blocked_by,
+      alert_suppressed: !!dep.blocked_by,
+      children_count: dep.children_count,
     };
   });
 }
@@ -172,6 +183,8 @@ export async function dashboardStats() {
     open_incidents: openIncidents,
     // Monitor yang hasilnya berbeda antar lokasi
     location_split: monitors.filter((m) => m.location_split).length,
+    // Monitor yang alert-nya sedang ditahan karena induknya down
+    alerts_suppressed: monitors.filter((m) => m.alert_suppressed).length,
   };
 }
 

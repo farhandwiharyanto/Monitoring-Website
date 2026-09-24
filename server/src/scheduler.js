@@ -1,5 +1,5 @@
 import cron from "node-cron";
-import { prisma, pruneOldHeartbeats } from "./db.js";
+import { prisma, pruneOldHeartbeats, pruneOldAuditLogs } from "./db.js";
 import { config, isPrimaryLocation } from "./config.js";
 import { runCheck } from "./checks/index.js";
 import { fetchCertInfo, tlsTarget } from "./checks/cert.js";
@@ -8,6 +8,7 @@ import { triggerActionWebhook } from "./lib/actionWebhook.js";
 import { STATUS } from "./lib/status.js";
 import { findMonitor } from "./lib/stats.js";
 import { isInMaintenance } from "./lib/maintenance.js";
+import { blockingAncestor } from "./lib/dependency.js";
 
 // State in-memory per monitor: kapan check berikutnya, retry count, sedang jalan atau tidak
 const state = new Map(); // id -> { nextRun, retries, running, nextCertCheck }
@@ -21,8 +22,11 @@ export function initScheduler(socketIo) {
   io = socketIo;
   // node-cron: tick setiap detik, jalankan monitor yang sudah jatuh tempo
   cron.schedule("* * * * * *", () => tick().catch((e) => console.error("[scheduler]", e)));
-  // Bersihkan heartbeat lama setiap hari jam 03:00
-  cron.schedule("0 3 * * *", () => pruneOldHeartbeats().catch(console.error));
+  // Bersihkan heartbeat & audit log lama setiap hari jam 03:00
+  cron.schedule("0 3 * * *", () => {
+    pruneOldHeartbeats().catch(console.error);
+    pruneOldAuditLogs().catch(console.error);
+  });
   console.log("[scheduler] berjalan");
 }
 
@@ -147,16 +151,33 @@ export async function applyResult(monitor, { status, message, ms, assertion }, o
   // alert tetap dipegang lokasi primary agar tidak ada alert ganda.
   if (!primary) return beat;
 
+  // Induk yang sedang down menahan alert monitor ini: satu gangguan di lapisan
+  // bawah (router, gateway, database) tidak perlu memicu alert dari semua
+  // layanan di atasnya. Check tetap jalan dan incident tetap dicatat — hanya
+  // notifikasi & webhook aksinya yang diam.
+  const blocker = monitor.parent_id ? await blockingAncestor(monitor.id) : null;
+
   // Incident selalu dicatat; alert hanya dikirim di luar maintenance window.
   if (status === STATUS.DOWN) {
     let incident = await prisma.incident.findFirst({ where: { monitor_id: monitor.id, resolved_at: null }, orderBy: { id: "desc" } });
     if (!incident || prevStatus !== STATUS.DOWN) {
       incident = await prisma.incident.create({
-        data: { monitor_id: monitor.id, cause: (inMaint ? "[maintenance] " : "") + message, maintenance: inMaint },
+        data: {
+          monitor_id: monitor.id, cause: (inMaint ? "[maintenance] " : "") + message, maintenance: inMaint,
+          suppressed: !!blocker, suppressed_by_id: blocker?.id ?? null,
+        },
+      });
+    } else if (!!blocker !== incident.suppressed) {
+      // Keadaan induk berubah di tengah incident — penandanya ikut diperbarui
+      incident = await prisma.incident.update({
+        where: { id: incident.id },
+        data: { suppressed: !!blocker, suppressed_by_id: blocker?.id ?? null },
       });
     }
-    // Kirim alert "down" sekali: saat pertama down, atau saat maintenance berakhir tapi masih down
-    if (!inMaint && !incident.notified) {
+    // Kirim alert "down" sekali: saat pertama down, saat maintenance berakhir
+    // tapi masih down, atau saat induk sudah pulih sementara monitor ini tetap
+    // down — berarti masalahnya memang miliknya sendiri.
+    if (!inMaint && !blocker && !incident.notified) {
       await prisma.incident.update({ where: { id: incident.id }, data: { notified: true } });
       notifyMonitorEvent(monitor, "down", beat, incident);
       // Webhook aksi memicu otomasi di sistem lain (restart, buka ticket).
@@ -166,7 +187,8 @@ export async function applyResult(monitor, { status, message, ms, assertion }, o
   } else if (status === STATUS.UP && prevStatus === STATUS.DOWN) {
     const incident = await prisma.incident.findFirst({ where: { monitor_id: monitor.id, resolved_at: null }, orderBy: { id: "desc" } });
     if (incident) await prisma.incident.update({ where: { id: incident.id }, data: { resolved_at: new Date() } });
-    // Alert "recover" hanya jika alert "down"-nya pernah terkirim
+    // Alert "recover" hanya jika alert "down"-nya pernah terkirim. Incident yang
+    // alert-nya ditahan dependency karenanya juga tidak mengabari saat pulih.
     if (!inMaint && incident?.notified) {
       notifyMonitorEvent(monitor, "up", beat, incident);
       triggerActionWebhook(monitor, "recover", { incident, heartbeat: beat }).catch(() => {});

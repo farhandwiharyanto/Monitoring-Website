@@ -27,3 +27,11 @@ export async function pruneOldHeartbeats() {
   const { count } = await prisma.heartbeat.deleteMany({ where: { created_at: { lt: cutoff } } });
   if (count) console.log(`[db] prune ${count} heartbeat lama`);
 }
+
+// Audit log ikut dibersihkan agar tabelnya tidak tumbuh selamanya (AUDIT_RETENTION_DAYS)
+export async function pruneOldAuditLogs() {
+  const days = Math.max(1, config.auditRetentionDays);
+  const cutoff = new Date(Date.now() - days * 86400_000);
+  const { count } = await prisma.auditLog.deleteMany({ where: { created_at: { lt: cutoff } } });
+  if (count) console.log(`[db] prune ${count} audit log lama`);
+}

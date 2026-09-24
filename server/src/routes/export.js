@@ -4,6 +4,7 @@ import { requireAuth, requireAdmin } from "../lib/auth.js";
 import { decorateMonitors, monitorInclude } from "../lib/stats.js";
 import { STATUS_LABEL } from "../lib/status.js";
 import { config } from "../config.js";
+import { buildAuditWhere } from "./audit.js";
 
 export const exportRouter = Router();
 exportRouter.use(requireAuth);
@@ -177,6 +178,35 @@ exportRouter.get("/incidents", async (req, res) => {
     format: fmt(req),
     filename: "pulsewatch-incidents",
     columns: ["id", "monitor_id", "monitor", "started_at", "resolved_at", "duration_seconds", "ongoing", "maintenance", "cause"],
+    rows,
+  });
+});
+
+// Audit log untuk arsip di luar aplikasi (mis. disimpan ke object storage).
+// Admin-only, sejalan dengan endpoint /api/audit-logs.
+exportRouter.get("/audit", requireAdmin, async (req, res) => {
+  // Filter yang sama persis dengan /api/audit-logs, jadi hasil unduhan cocok
+  // dengan yang sedang ditampilkan di layar.
+  const where = buildAuditWhere(req.query);
+
+  const rows = (await prisma.auditLog.findMany({ where, orderBy: { created_at: "desc" }, take: 50_000 })).map((r) => ({
+    id: r.id,
+    created_at: r.created_at,
+    actor: r.actor,
+    actor_type: r.actor_type,
+    action: r.action,
+    entity: r.entity,
+    entity_id: r.entity_id,
+    entity_name: r.entity_name,
+    summary: r.summary,
+    ip: r.ip,
+    // Kolom changes diratakan jadi satu sel supaya CSV tetap satu baris per kejadian
+    changes: r.changes ? JSON.stringify(r.changes) : "",
+  }));
+  send(res, {
+    format: fmt(req),
+    filename: "pulsewatch-audit",
+    columns: ["id", "created_at", "actor", "actor_type", "action", "entity", "entity_id", "entity_name", "summary", "ip", "changes"],
     rows,
   });
 });

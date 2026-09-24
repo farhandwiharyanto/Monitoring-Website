@@ -76,8 +76,17 @@ model Monitor {
   action_on_down         Boolean  @default(true)
   action_on_recover      Boolean  @default(false)
 
+  // Dependency antar-monitor: monitor induk (mis. router/gateway di depan
+  // layanan ini). Selama induk down, alert & webhook aksi monitor ini ditahan
+  // supaya satu gangguan di lapisan bawah tidak membanjiri notifikasi.
+  parent_id             Int?
+
   created_at            DateTime @default(now())
   updated_at            DateTime @default(now()) @updatedAt
+
+  // Induk dihapus -> anak jadi mandiri lagi (SetNull), bukan ikut terhapus
+  parent   Monitor?  @relation("MonitorDependency", fields: [parent_id], references: [id], onDelete: SetNull)
+  children Monitor[] @relation("MonitorDependency")
 
   heartbeats    Heartbeat[]
   incidents     Incident[]
@@ -88,6 +97,7 @@ model Monitor {
   events        MonitorEvent[]
   webhook_logs  WebhookLog[]
 
+  @@index([parent_id])
   @@map("monitors")
 }
 
@@ -122,6 +132,10 @@ model Incident {
   cause       String?
   maintenance Boolean   @default(false) // down terjadi saat maintenance
   notified    Boolean   @default(false) // alert "down" sudah terkirim
+  // Alert ditahan karena monitor induk sedang down. Tetap dicatat sebagai
+  // incident supaya riwayat & uptime tidak berubah, hanya alert-nya yang diam.
+  suppressed       Boolean @default(false)
+  suppressed_by_id Int?    // id monitor induk yang menahan, untuk ditampilkan di UI
 
   monitor Monitor          @relation(fields: [monitor_id], references: [id], onDelete: Cascade)
   updates IncidentUpdate[]
@@ -334,4 +348,28 @@ model MaintenanceWindow {
 
   @@index([monitor_id])
   @@map("maintenance_windows")
+}
+
+// Jejak perubahan konfigurasi & akses. Ditulis dari route, bukan dari trigger DB,
+// supaya ikut mencatat siapa pelakunya (user login maupun API key) dan dari IP mana.
+// Isinya hanya dibaca — tidak ada endpoint untuk mengubah atau menghapus satu baris.
+model AuditLog {
+  id          Int      @id @default(autoincrement())
+  actor_id    Int?     // id user; null untuk API key atau tindakan sistem
+  actor       String   // username, "apikey:<label>", atau "sistem"
+  actor_type  String   @default("user") // user | apikey | system
+  action      String   // mis. monitor.update, user.delete, auth.login
+  entity      String   // monitor | notification | user | api_key | status_page | ...
+  entity_id   Int?
+  entity_name String?  // nama saat kejadian, tetap terbaca walau entitasnya dihapus
+  summary     String?  // ringkasan sebaris untuk daftar
+  // { field: { from, to } } — nilai rahasia sudah ditopeng sebelum disimpan
+  changes     Json?
+  ip          String?
+  created_at  DateTime @default(now())
+
+  @@index([created_at(sort: Desc)])
+  @@index([entity, entity_id, created_at(sort: Desc)])
+  @@index([actor, created_at(sort: Desc)])
+  @@map("audit_logs")
 }
