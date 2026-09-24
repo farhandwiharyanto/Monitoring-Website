@@ -83,6 +83,13 @@ export const config = {
   encryptionKey: process.env.ENCRYPTION_KEY || "",
   // Retensi heartbeat (hari) — dibersihkan tiap hari jam 03:00.
   heartbeatRetentionDays: Number(process.env.HEARTBEAT_RETENTION_DAYS || 90),
+  // --- Laporan SLA ---
+  // Downtime saat maintenance window aktif tidak dihitung melanggar SLA.
+  // Set false bila ingin laporan memakai waktu kalender apa adanya.
+  slaExcludeMaintenance: bool(process.env.SLA_EXCLUDE_MAINTENANCE, true),
+  // Target SLO bawaan untuk monitor baru (persen). Kosong = tanpa target.
+  sloDefaultTarget: process.env.SLO_DEFAULT_TARGET ? Number(process.env.SLO_DEFAULT_TARGET) : null,
+
   // Retensi audit log (hari). Lebih panjang dari heartbeat karena yang disimpan
   // adalah jejak perubahan konfigurasi, bukan data deret waktu.
   auditRetentionDays: Number(process.env.AUDIT_RETENTION_DAYS || 365),

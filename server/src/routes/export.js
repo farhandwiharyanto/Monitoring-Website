@@ -5,6 +5,7 @@ import { decorateMonitors, monitorInclude } from "../lib/stats.js";
 import { STATUS_LABEL } from "../lib/status.js";
 import { config } from "../config.js";
 import { buildAuditWhere } from "./audit.js";
+import { slaReport, monthRange, parseMonth, humanDuration } from "../lib/sla.js";
 
 export const exportRouter = Router();
 exportRouter.use(requireAuth);
@@ -179,6 +180,52 @@ exportRouter.get("/incidents", async (req, res) => {
     filename: "pulsewatch-incidents",
     columns: ["id", "monitor_id", "monitor", "started_at", "resolved_at", "duration_seconds", "ongoing", "maintenance", "cause"],
     rows,
+  });
+});
+
+// Laporan SLA satu rentang — untuk dilampirkan ke laporan bulanan ke klien.
+// Durasi disertakan dua kali: dalam detik supaya bisa dihitung ulang, dan dalam
+// bentuk terbaca supaya langsung enak dilihat di spreadsheet.
+exportRouter.get("/sla", async (req, res) => {
+  const range = (req.query.month && parseMonth(req.query.month)) || {
+    from: clampDate(req.query.from, monthRange().from),
+    to: clampDate(req.query.to, monthRange().to),
+  };
+  const { rows } = await slaReport({
+    from: range.from, to: range.to,
+    monitorId: req.query.monitor_id || null,
+    excludeMaintenance: req.query.include_maintenance === "true" ? false : undefined,
+  });
+
+  send(res, {
+    format: fmt(req),
+    filename: "pulsewatch-sla",
+    columns: [
+      "monitor_id", "monitor", "type", "measured_from", "measured_to",
+      "uptime_percent", "slo_target", "slo_met", "down_seconds", "downtime",
+      "error_budget_seconds", "error_budget_used_seconds", "error_budget_remaining_seconds", "error_budget_used_percent",
+      "incidents", "ongoing_incidents", "mttr_seconds", "longest_incident_seconds",
+    ],
+    rows: rows.map((r) => ({
+      monitor_id: r.monitor_id,
+      monitor: r.monitor,
+      type: r.type,
+      measured_from: r.measured_from,
+      measured_to: r.measured_to,
+      uptime_percent: r.uptime,
+      slo_target: r.slo_target ?? "",
+      slo_met: r.error_budget ? r.error_budget.met : "",
+      down_seconds: r.down_seconds,
+      downtime: humanDuration(r.down_seconds),
+      error_budget_seconds: r.error_budget?.allowed_seconds ?? "",
+      error_budget_used_seconds: r.error_budget?.used_seconds ?? "",
+      error_budget_remaining_seconds: r.error_budget?.remaining_seconds ?? "",
+      error_budget_used_percent: r.error_budget?.used_percent ?? "",
+      incidents: r.incidents,
+      ongoing_incidents: r.ongoing_incidents,
+      mttr_seconds: r.mttr_seconds ?? "",
+      longest_incident_seconds: r.longest_incident_seconds ?? "",
+    })),
   });
 });
 

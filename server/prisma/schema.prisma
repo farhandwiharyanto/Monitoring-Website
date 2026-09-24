@@ -76,6 +76,10 @@ model Monitor {
   action_on_down         Boolean  @default(true)
   action_on_recover      Boolean  @default(false)
 
+  // Target SLO dalam persen (mis. 99.9). null = monitor ini tidak punya target,
+  // uptime-nya tetap dilaporkan tapi tanpa error budget.
+  slo_target            Float?
+
   // Dependency antar-monitor: monitor induk (mis. router/gateway di depan
   // layanan ini). Selama induk down, alert & webhook aksi monitor ini ditahan
   // supaya satu gangguan di lapisan bawah tidak membanjiri notifikasi.

@@ -122,6 +122,18 @@ function cleanAssertion(body, errors) {
   return { assertion_path: path.slice(0, 255), assertion_operator: operator, assertion_value: needsValue ? value.slice(0, 500) : null };
 }
 
+// Target SLO dalam persen. Dibatasi 0–100 dan di bawah 100 persis: target 100%
+// berarti error budget nol, yang tidak ada gunanya sebagai alat ukur.
+function cleanSloTarget(body, errors) {
+  if (body.slo_target === undefined) return config.sloDefaultTarget;
+  if (body.slo_target === null || body.slo_target === "") return null;
+  const n = Number(body.slo_target);
+  if (!Number.isFinite(n)) { errors.push("Target SLO harus berupa angka"); return null; }
+  if (n <= 0 || n >= 100) { errors.push("Target SLO harus di antara 0 dan 100 (mis. 99.9)"); return null; }
+  // Empat angka di belakang koma sudah setara ~26 detik per bulan
+  return Math.round(n * 10000) / 10000;
+}
+
 // push_token adalah kredensial: hanya admin yang boleh melihatnya, dan selalu
 // dikirim bersama URL siap pakai supaya gampang disalin.
 function shape(monitor, user) {
@@ -160,6 +172,7 @@ function validate(body, existing = null) {
     active: body.active === undefined ? true : !!body.active,
     push_grace_seconds: Math.min(86400, Math.max(0, Number(body.push_grace_seconds ?? 60))),
     check_cert: body.check_cert === undefined ? true : !!body.check_cert,
+    slo_target: cleanSloTarget(body, errors),
     auth_type: AUTH_TYPES.includes(body.auth_type) ? body.auth_type : "none",
   };
 

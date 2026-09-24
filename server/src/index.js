@@ -23,6 +23,7 @@ import { apiKeysRouter } from "./routes/apiKeys.js";
 import { webhookRouter } from "./routes/webhook.js";
 import { incidentsRouter } from "./routes/incidents.js";
 import { auditRouter } from "./routes/audit.js";
+import { reportsRouter } from "./routes/reports.js";
 
 // Mode worker (WORKER_ONLY=true): hanya menjalankan scheduler dan menulis
 // heartbeat berlabel LOCATION_NAME ke database yang sama. Tidak membuka HTTP.
@@ -61,6 +62,7 @@ app.use("/api/notifications", denyApiKey, notificationsRouter);
 app.use("/api/incidents", incidentsRouter);
 // Audit log hanya dibaca admin yang login (router-nya sudah menolak API key)
 app.use("/api/audit-logs", auditRouter);
+app.use("/api/reports", reportsRouter);
 app.use("/api/webhook", webhookRouter);
 app.use("/api/status-pages", statusPagesRouter);
 app.use("/api/public/status", publicStatusRouter);

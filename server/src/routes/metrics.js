@@ -3,6 +3,7 @@ import { prisma } from "../db.js";
 import { config } from "../config.js";
 import { userFromToken } from "../lib/auth.js";
 import { decorateMonitors, monitorInclude } from "../lib/stats.js";
+import { slaReport, monthRange } from "../lib/sla.js";
 
 // Exporter bergaya Prometheus (text/plain; version=0.0.4).
 export const metricsRouter = Router();
@@ -85,6 +86,32 @@ metricsRouter.get("/", async (req, res) => {
   metric(lines, "pulsewatch_monitor_location_split",
     "1 bila lokasi tidak sepakat (sebagian up, sebagian down)", "gauge",
     monitors.map((m) => [labels(base(m)), m.location_split ? 1 : 0]));
+
+  // Error budget bulan berjalan: yang dipantau bukan cuma "sedang down atau tidak",
+  // tapi berapa jatah downtime yang sudah terpakai bulan ini.
+  const { from, to } = monthRange();
+  const sla = await slaReport({ from, to });
+  const slaBase = (r) => ({ monitor_id: r.monitor_id, monitor: r.monitor, type: r.type });
+
+  metric(lines, "pulsewatch_monitor_uptime_month_ratio",
+    "Rasio uptime (0–1) bulan berjalan, dihitung dari durasi incident", "gauge",
+    sla.rows.filter((r) => r.uptime !== null).map((r) => [labels(slaBase(r)), (r.uptime / 100).toFixed(6)]));
+
+  metric(lines, "pulsewatch_monitor_downtime_month_seconds",
+    "Total detik downtime bulan berjalan", "gauge",
+    sla.rows.map((r) => [labels(slaBase(r)), r.down_seconds]));
+
+  metric(lines, "pulsewatch_monitor_slo_target",
+    "Target SLO monitor dalam persen", "gauge",
+    sla.rows.filter((r) => r.slo_target !== null).map((r) => [labels(slaBase(r)), r.slo_target]));
+
+  metric(lines, "pulsewatch_monitor_error_budget_remaining_seconds",
+    "Sisa error budget bulan berjalan dalam detik; negatif berarti target sudah terlewat", "gauge",
+    sla.rows.filter((r) => r.error_budget).map((r) => [labels(slaBase(r)), r.error_budget.remaining_seconds]));
+
+  metric(lines, "pulsewatch_monitor_error_budget_used_ratio",
+    "Bagian error budget bulan berjalan yang sudah terpakai (1 = habis)", "gauge",
+    sla.rows.filter((r) => r.error_budget).map((r) => [labels(slaBase(r)), (r.error_budget.used_percent / 100).toFixed(4)]));
 
   // Alert yang sedang ditahan karena induknya down — berguna untuk membedakan
   // "sunyi karena sehat" dari "sunyi karena sengaja didiamkan".
