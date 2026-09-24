@@ -16,7 +16,9 @@ Jejak siapa mengubah apa, kapan, dan dari IP mana. Dibuka lewat menu **Audit log
 | `api_key` | `create`, `revoke`, `delete` |
 | `status_page` | `create`, `update`, `delete` |
 | `maintenance` | `create`, `update`, `delete` |
-| `incident` | kabar publik: `create`, `edit`, `delete` |
+| `oncall_schedule` | `create`, `update`, `delete`, dan shift: `oncall_shift.create`, `oncall_shift.delete` |
+| `escalation_policy` | `create`, `update`, `delete` |
+| `incident` | kabar publik: `create`, `edit`, `delete`; dan `escalation.acknowledge` |
 | `settings` | `update` bahasa & tema default instance |
 
 Tiap baris menyimpan pelaku (`actor`), jenis pelakunya (`user`, `apikey`, `anonymous`),

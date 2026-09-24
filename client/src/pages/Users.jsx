@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus, Trash2, KeyRound, ShieldCheck, Eye, X } from "lucide-react";
+import { Plus, Trash2, KeyRound, ShieldCheck, Eye, X, Siren } from "lucide-react";
 import clsx from "clsx";
 import { api } from "../lib/api.js";
 import { useAuth } from "../lib/auth.jsx";
@@ -12,9 +12,11 @@ export default function Users() {
   const [list, setList] = useState([]);
   const [form, setForm] = useState(null); // {username,password,role} | {id, password} (reset)
   const [error, setError] = useState("");
+  // Notifikasi yang bisa dipakai sebagai kontak on-call pribadi
+  const [notifs, setNotifs] = useState([]);
 
   const load = () => api("/users").then(setList);
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); api("/notifications").then(setNotifs).catch(() => setNotifs([])); }, []);
 
   const save = async (e) => {
     e.preventDefault(); setError("");
@@ -26,6 +28,12 @@ export default function Users() {
   };
   const setRole = async (u, role) => {
     try { await api(`/users/${u.id}`, { method: "PUT", body: { role } }); load(); } catch (err) { alert(err.message); }
+  };
+  // Kontak on-call menentukan ke mana orang ini dipanggil saat sedang bertugas
+  // dan sebuah tingkat eskalasi menunjuk jadwal rotasinya.
+  const setContact = async (u, value) => {
+    try { await api(`/users/${u.id}`, { method: "PUT", body: { oncall_notification_id: value || null } }); load(); }
+    catch (err) { alert(err.message); }
   };
   const remove = async (u) => {
     if (!confirm(t("users.confirmDelete", { username: u.username }))) return;
@@ -52,6 +60,16 @@ export default function Users() {
               <p className="font-medium text-fg">{u.username} {u.id === me.id && <span className="text-xs text-muted">{t("users.you")}</span>}</p>
               <p className="text-xs text-muted">{t("users.createdAt", { date: fmtTime(u.created_at) })}</p>
             </div>
+            <Siren size={14} className={clsx("shrink-0", u.oncall_notification_id ? "text-accent" : "text-muted")} />
+            <select
+              className="input !w-auto !py-1.5 text-xs max-w-[11rem]"
+              title={t("users.oncallContactHint")}
+              value={u.oncall_notification_id ?? ""}
+              onChange={(e) => setContact(u, e.target.value)}
+            >
+              <option value="">{t("users.noOncallContact")}</option>
+              {notifs.map((n) => <option key={n.id} value={n.id}>{n.name}</option>)}
+            </select>
             <select
               className="input !w-auto !py-1.5 text-xs"
               value={u.role}

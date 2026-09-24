@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, FlaskConical, Save, Plus, X, ShieldCheck, Zap, Network } from "lucide-react";
+import { ArrowLeft, FlaskConical, Save, Plus, X, ShieldCheck, Zap, Network, Siren } from "lucide-react";
 import clsx from "clsx";
 import { api } from "../lib/api.js";
 import { useMonitors } from "../lib/monitors.jsx";
@@ -30,6 +30,8 @@ const empty = {
   push_grace_seconds: 60, check_cert: true,
   // Dependency: "" = tidak punya induk
   parent_id: "",
+  // Escalation policy: "" = ikut policy default
+  escalation_policy_id: "",
   // Target SLO dalam persen; "" = tanpa target
   slo_target: "",
   // HTTP lanjutan
@@ -60,6 +62,7 @@ export default function MonitorForm() {
   const { t } = useI18n();
   const [form, setForm] = useState(empty);
   const [notifs, setNotifs] = useState([]);
+  const [policies, setPolicies] = useState([]);
   const [allTags, setAllTags] = useState([]);
   const [tagInput, setTagInput] = useState("");
   const [headerRows, setHeaderRows] = useState([]);
@@ -72,6 +75,7 @@ export default function MonitorForm() {
   useEffect(() => {
     api("/notifications").then(setNotifs).catch(() => {});
     api("/tags").then(setAllTags).catch(() => {});
+    api("/oncall/policies").then(setPolicies).catch(() => setPolicies([]));
     if (id)
       api(`/monitors/${id}`).then((m) => {
         setForm({
@@ -79,6 +83,7 @@ export default function MonitorForm() {
           port: m.port ?? "", url: m.url ?? "", hostname: m.hostname ?? "",
           keyword: m.keyword ?? "", dns_expected: m.dns_expected ?? "",
           parent_id: m.parent_id ?? "",
+          escalation_policy_id: m.escalation_policy_id ?? "",
           slo_target: m.slo_target ?? "",
           auth_type: m.auth_type || "none",
           auth_username: m.auth_username ?? "",
@@ -121,6 +126,7 @@ export default function MonitorForm() {
       ? t("slo.budgetPreview", { target: sloValue, duration: fmtDuration(Math.round(((100 - sloValue) / 100) * 30 * 86400)) })
       : null;
   const parentOf = (monitors || []).find((m) => m.id === Number(form.parent_id));
+  const policyOf = policies.find((p) => p.id === Number(form.escalation_policy_id));
   const addTag = (name) => {
     const n = String(name || tagInput).trim().toLowerCase().replace(/\s+/g, "-");
     if (!n) return;
@@ -280,6 +286,26 @@ export default function MonitorForm() {
             {form.parent_id
               ? t("dep.parentHint", { parent: parentOf?.name || "" })
               : t("dep.noParentHint")}
+          </p>
+        </div>
+      </section>
+
+      <section className="card p-6 space-y-4">
+        <div>
+          <h2 className="font-medium text-fg flex items-center gap-2"><Siren size={15} className="text-accent" /> {t("esc.monitorLabel")}</h2>
+          <p className="text-sm text-muted mt-1">{t("esc.subtitle")}</p>
+        </div>
+        <div>
+          <select className="input" value={form.escalation_policy_id ?? ""} onChange={set("escalation_policy_id")}>
+            <option value="">{t("esc.noPolicy")}</option>
+            {policies.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}{p.is_default ? ` (${t("esc.defaultBadge")})` : ""}</option>
+            ))}
+          </select>
+          <p className="text-xs text-muted mt-2">
+            {form.escalation_policy_id
+              ? t("esc.policyHint", { name: policyOf?.name || "" })
+              : t("esc.noPolicyHint")}
           </p>
         </div>
       </section>

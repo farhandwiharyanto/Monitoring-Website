@@ -66,14 +66,14 @@ berarti target sudah terlewat pada periode itu.
 Monitor tanpa target tetap dilaporkan uptime dan downtime-nya, hanya tanpa
 kolom error budget.
 
-## Yang belum tertangani
+## Monitor yang dijeda
 
-**Monitor yang dijeda saat sedang down akan terus menghitung downtime.** Menjeda
-monitor tidak menutup incident yang sedang terbuka, sehingga incident itu tetap
-dianggap berjalan sampai "sekarang" dan menggerus error budget-nya. Untuk saat ini,
-tutup dulu incident-nya dengan menjalankan kembali monitornya sampai statusnya up,
-baru dijeda. Perbaikannya perlu mengubah kapan incident ditutup, yang menyentuh
-alur alert, jadi sengaja tidak dilakukan bersamaan dengan laporan ini.
+Menjeda monitor yang sedang down akan **menutup incident-nya**. Downtime yang
+dihitung berhenti saat dijeda, bukan saat monitor dijalankan lagi — monitor yang
+dijeda tidak dicek, jadi tidak ada heartbeat yang bisa menutup incident itu.
+Rantai eskalasinya ikut berhenti; lihat [on-call.md](on-call.md).
+
+## Yang belum tertangani
 
 **Waktu monitor dijeda tetap dihitung sebagai periode pengukuran.** Pulsewatch
 tidak menyimpan riwayat jeda, jadi tidak ada cara membedakan "up" dari "tidak

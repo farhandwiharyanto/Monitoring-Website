@@ -41,6 +41,7 @@ Sudah termasuk Postgres, dan migration dijalankan otomatis saat start.
 - Webhook aksi untuk memicu otomasi di sistem lain (restart service, buka ticket)
 - Dependency antar-monitor: selama monitor induk down, alert anaknya ditahan — satu gangguan
   tidak jadi sepuluh notifikasi
+- Jadwal on-call & eskalasi berjenjang, dengan tombol "saya tangani" yang menghentikan rantai
 
 **Berbagi & integrasi**
 - Status page publik dengan logo, warna, tema, dan custom domain
@@ -66,6 +67,8 @@ Sudah termasuk Postgres, dan migration dijalankan otomatis saat start.
 | **[Status page](docs/status-page.md)** | Halaman publik, incident update, custom domain (nginx & Traefik) |
 | **[Laporan SLA](docs/laporan.md)** | Cara uptime dihitung, error budget, maintenance, ekspor |
 | **[Audit log](docs/audit-log.md)** | Apa yang dicatat, penopengan kredensial, endpoint, arsip |
+| **[On-call](docs/on-call.md)** | Jadwal rotasi, escalation policy berjenjang, acknowledge |
+| **[Rencana](docs/rencana.md)** | Status tiap phase, yang belum dikerjakan, utang teknis, cara menguji |
 
 ---
 

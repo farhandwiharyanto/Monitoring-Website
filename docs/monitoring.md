@@ -144,3 +144,5 @@ Yang sedang ditahan bisa dilihat sekaligus lewat:
 - kartu Down di dashboard, yang menyebut berapa alert sedang ditahan
 - metrik `pulsewatch_monitor_alert_suppressed` (lihat [Integrasi](integrasi.md#prometheus--grafana))
 - `GET /api/monitors/:id/children` untuk daftar monitor yang bergantung pada sebuah monitor
+
+Alert yang ditahan juga tidak memulai rantai eskalasi on-call — lihat [on-call.md](on-call.md).

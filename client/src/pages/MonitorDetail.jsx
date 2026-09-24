@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { Pencil, Trash2, Pause, Play, ArrowLeft, ExternalLink, Wrench, Plus, ShieldCheck, ShieldAlert, RefreshCw, Copy, Download, Webhook, Globe2, CheckCircle2, XCircle, AlertTriangle, Zap, Bot, MessageSquarePlus, X, Network, Target } from "lucide-react";
+import { Pencil, Trash2, Pause, Play, ArrowLeft, ExternalLink, Wrench, Plus, ShieldCheck, ShieldAlert, RefreshCw, Copy, Download, Webhook, Globe2, CheckCircle2, XCircle, AlertTriangle, Zap, Bot, MessageSquarePlus, X, Network, Target, Siren, HandHeart } from "lucide-react";
 import clsx from "clsx";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { api, download } from "../lib/api.js";
@@ -43,6 +43,7 @@ export default function MonitorDetail() {
   const [copied, setCopied] = useState(false);
   const [children, setChildren] = useState([]);
   const [sla, setSla] = useState(null);
+  const [acking, setAcking] = useState(false);
 
   const load = () =>
     Promise.all([
@@ -87,12 +88,25 @@ export default function MonitorDetail() {
     return () => { socket.off("heartbeat", onBeat); socket.off("monitor:event", onEvent); };
   }, [id]);
 
+  // Incident yang masih berjalan dan punya rantai eskalasi — hanya satu yang
+  // mungkin terbuka sekaligus, jadi cukup diambil yang pertama.
+  const openEscalation = incidents.find((i) => !i.resolved_at && i.escalation) || null;
+
   const chartData = useMemo(
     () => beats.map((b) => ({ t: parseDate(b.created_at).getTime(), ms: b.status === 1 ? b.response_time : null, status: b.status, msg: (b.maintenance ? "[maintenance] " : "") + (b.message || "") })),
     [beats]
   );
 
   const act = async (path) => { await api(`/monitors/${id}/${path}`, { method: "POST" }); await load(); refresh(); };
+
+  // "Saya tangani": menghentikan sisa tingkat eskalasi. Tombol ini setara dengan
+  // tautan ack di pesan notifikasi, bedanya di sini pelakunya sudah diketahui.
+  const acknowledge = async (incidentId) => {
+    setAcking(true);
+    try { await api(`/oncall/escalations/${incidentId}/ack`, { method: "POST" }); await load(); }
+    catch (err) { alert(err.message); }
+    finally { setAcking(false); }
+  };
   const remove = async () => {
     if (!confirm(t("detail.confirmDelete", { name: monitor.name }))) return;
     await api(`/monitors/${id}`, { method: "DELETE" });
@@ -356,6 +370,50 @@ export default function MonitorDetail() {
         </div>
       )}
 
+      {/* Eskalasi on-call untuk incident yang masih terbuka */}
+      {openEscalation && (
+        <div className="card p-5 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="font-medium text-fg text-sm flex items-center gap-2">
+              <Siren size={15} className="text-accent" /> {t("esc.card")}
+              {openEscalation.escalation.policy && <span className="text-xs text-muted font-normal">· {openEscalation.escalation.policy.name}</span>}
+            </h2>
+            {isAdmin && openEscalation.escalation.active && (
+              <button className="btn-primary !py-1 !px-3 text-xs" disabled={acking} onClick={() => acknowledge(openEscalation.id)}>
+                <HandHeart size={13} /> {acking ? t("esc.acking") : t("esc.ack")}
+              </button>
+            )}
+          </div>
+
+          {openEscalation.escalation.acknowledged_at ? (
+            <p className="rounded-lg border border-up/40 bg-up/10 text-fg2 text-xs px-3 py-2">
+              {t("esc.ackedBy", { by: openEscalation.escalation.acknowledged_by || "—", time: fmtTime(openEscalation.escalation.acknowledged_at) })}
+            </p>
+          ) : openEscalation.escalation.next_level ? (
+            <p className="text-xs text-muted">
+              {t("esc.nextLevel", { n: openEscalation.escalation.next_level.level, time: fmtTime(openEscalation.escalation.next_level.due_at) })}
+            </p>
+          ) : (
+            <p className="text-xs text-muted">{t("esc.stoppedBecause", { reason: openEscalation.escalation.stopped_reason_text || "—" })}</p>
+          )}
+
+          <ol className="space-y-1.5 border-l-2 border-accent/30 pl-3">
+            {openEscalation.escalation.levels.map((l) => (
+              <li key={l.id} className="text-xs flex items-baseline gap-2 flex-wrap">
+                <span className={clsx("shrink-0 font-medium", l.status === "sent" ? "text-up" : l.status === "failed" ? "text-down" : l.status === "pending" ? "text-accent" : "text-muted")}>
+                  {t(`esc.status${l.status.charAt(0).toUpperCase()}${l.status.slice(1)}`)}
+                </span>
+                <span className="text-muted shrink-0">
+                  {l.delay_minutes === 0 ? t("esc.immediately") : t("esc.afterMinutes", { n: l.delay_minutes })}
+                </span>
+                {l.target_label && <span className="text-fg2 min-w-0">{l.target_label}</span>}
+                {l.error && <span className="text-muted">· {l.error}</span>}
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
+
       {/* Perbandingan antar lokasi pengecekan */}
       {locations.length > 0 && (
         <div className="card p-5 space-y-3">
@@ -471,6 +529,16 @@ export default function MonitorDetail() {
                         <p className="text-[11px] text-muted mt-0.5 inline-flex items-center gap-1">
                           <Network size={11} />
                           {inc.suppressed_by?.name ? t("dep.suppressedBy", { parent: inc.suppressed_by.name }) : t("dep.suppressedIncident")}
+                        </p>
+                      )}
+                      {inc.escalation && (
+                        <p className="text-[11px] text-muted mt-0.5 flex items-center gap-1">
+                          <Siren size={11} className="shrink-0" />
+                          {inc.escalation.acknowledged_by
+                            ? t("esc.ackedBy", { by: inc.escalation.acknowledged_by, time: fmtClock(inc.escalation.acknowledged_at) })
+                            : inc.escalation.active
+                              ? t("esc.running")
+                              : t("esc.stoppedBecause", { reason: inc.escalation.stopped_reason_text || "—" })}
                         </p>
                       )}
                       {/* Kabar manual yang tampil di status page publik */}

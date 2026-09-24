@@ -19,6 +19,7 @@ import Users from "./pages/Users.jsx";
 import Maintenance from "./pages/Maintenance.jsx";
 import Audit from "./pages/Audit.jsx";
 import Reports from "./pages/Reports.jsx";
+import OnCall from "./pages/OnCall.jsx";
 
 export default function App() {
   const { lang, t } = useI18n();
@@ -84,6 +85,7 @@ export default function App() {
             <Route path="/users" element={<AdminOnly><Users /></AdminOnly>} />
             <Route path="/audit" element={<AdminOnly><Audit /></AdminOnly>} />
             <Route path="/reports" element={<Reports />} />
+            <Route path="/oncall" element={<OnCall />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
