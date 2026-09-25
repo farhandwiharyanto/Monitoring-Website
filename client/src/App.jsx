@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { getToken, setToken, api } from "./lib/api.js";
 import { AuthCtx } from "./lib/auth.jsx";
@@ -6,20 +6,27 @@ import { useI18n } from "./lib/i18n.jsx";
 import { setFormatLang } from "./lib/format.js";
 import { MonitorsProvider } from "./lib/monitors.jsx";
 import Layout from "./components/Layout.jsx";
-import Login from "./pages/Login.jsx";
-import Dashboard from "./pages/Dashboard.jsx";
-import Monitors from "./pages/Monitors.jsx";
-import MonitorDetail from "./pages/MonitorDetail.jsx";
-import MonitorForm from "./pages/MonitorForm.jsx";
-import Notifications from "./pages/Notifications.jsx";
-import StatusPages from "./pages/StatusPages.jsx";
-import PublicStatus from "./pages/PublicStatus.jsx";
-import Settings from "./pages/Settings.jsx";
-import Users from "./pages/Users.jsx";
-import Maintenance from "./pages/Maintenance.jsx";
-import Audit from "./pages/Audit.jsx";
-import Reports from "./pages/Reports.jsx";
-import OnCall from "./pages/OnCall.jsx";
+
+// Tiap halaman dimuat saat dibuka, bukan sekaligus di awal.
+//
+// Yang paling diuntungkan justru bukan admin, melainkan status page publik:
+// halaman itu dibuka orang luar, sering dari ponsel, justru saat sedang ada
+// gangguan — dan sebelumnya ia menarik seluruh aplikasi admin beserta pustaka
+// grafiknya hanya untuk menampilkan beberapa baris status.
+const Login = lazy(() => import("./pages/Login.jsx"));
+const Dashboard = lazy(() => import("./pages/Dashboard.jsx"));
+const Monitors = lazy(() => import("./pages/Monitors.jsx"));
+const MonitorDetail = lazy(() => import("./pages/MonitorDetail.jsx"));
+const MonitorForm = lazy(() => import("./pages/MonitorForm.jsx"));
+const Notifications = lazy(() => import("./pages/Notifications.jsx"));
+const StatusPages = lazy(() => import("./pages/StatusPages.jsx"));
+const PublicStatus = lazy(() => import("./pages/PublicStatus.jsx"));
+const Settings = lazy(() => import("./pages/Settings.jsx"));
+const Users = lazy(() => import("./pages/Users.jsx"));
+const Maintenance = lazy(() => import("./pages/Maintenance.jsx"));
+const Audit = lazy(() => import("./pages/Audit.jsx"));
+const Reports = lazy(() => import("./pages/Reports.jsx"));
+const OnCall = lazy(() => import("./pages/OnCall.jsx"));
 
 export default function App() {
   const { lang, t } = useI18n();
@@ -52,18 +59,24 @@ export default function App() {
 
   const logout = () => { setToken(null); setUser(null); };
 
+  // Layar tunggu dipakai ulang untuk pemeriksaan sesi maupun pemuatan halaman,
+  // supaya perpindahannya tidak terlihat berbeda bagi pengguna.
+  const memuat = <div className="min-h-screen grid place-items-center text-muted">{t("common.loading")}</div>;
+
   if (location.pathname.startsWith("/status/")) {
     return (
-      <Routes>
-        <Route path="/status/:slug" element={<PublicStatus />} />
-      </Routes>
+      <Suspense fallback={memuat}>
+        <Routes>
+          <Route path="/status/:slug" element={<PublicStatus />} />
+        </Routes>
+      </Suspense>
     );
   }
-  if (domainSlug === undefined) return <div className="min-h-screen grid place-items-center text-muted">{t("common.loading")}</div>;
-  if (domainSlug) return <PublicStatus slug={domainSlug} />;
+  if (domainSlug === undefined) return memuat;
+  if (domainSlug) return <Suspense fallback={memuat}><PublicStatus slug={domainSlug} /></Suspense>;
 
-  if (checking) return <div className="min-h-screen grid place-items-center text-muted">{t("common.loading")}</div>;
-  if (!user) return <Login onLogin={setUser} />;
+  if (checking) return memuat;
+  if (!user) return <Suspense fallback={memuat}><Login onLogin={setUser} /></Suspense>;
 
   const isAdmin = user.role === "admin";
   // Halaman khusus admin: viewer diarahkan kembali ke dashboard
@@ -73,6 +86,7 @@ export default function App() {
     <AuthCtx.Provider value={{ user, isAdmin }}>
       <MonitorsProvider>
         <Layout onLogout={logout}>
+          <Suspense fallback={<div className="py-20 grid place-items-center text-muted">{t("common.loading")}</div>}>
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/monitors" element={<Monitors />} />
@@ -89,6 +103,7 @@ export default function App() {
             <Route path="/settings" element={<Settings />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
+          </Suspense>
         </Layout>
       </MonitorsProvider>
     </AuthCtx.Provider>

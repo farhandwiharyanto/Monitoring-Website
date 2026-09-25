@@ -5,7 +5,7 @@ menjalankannya untuk diuji. Ditulis untuk sesi kerja berikutnya.
 
 [← Kembali ke README](../README.md)
 
-Terakhir diperbarui: 26 September 2026 · commit `32d6994`
+Terakhir diperbarui: 26 September 2026 · commit `f638ed6`
 
 ## Sudah selesai
 
@@ -90,7 +90,6 @@ datanya. Itu pernah terjadi sekali saat Phase 9 dikerjakan.
    kelak direplikasi. Berlaku juga untuk rate limit endpoint ack. (Duplikasi
    *check* saat direplikasi sudah tidak jadi masalah sejak lease scheduler,
    tapi rate limit tetap hidup sendiri-sendiri di tiap proses.)
-5. **Bundle klien 818 kB** (peringatan Vite). Belum pernah di-code-split.
 6. **Kontak on-call hanya bisa disetel admin.** Konfigurasi notifikasi berisi
    kredensial sehingga router-nya admin-only, jadi viewer yang ikut piket tidak
    bisa mengatur kontaknya sendiri. Kalau nanti perlu, jalannya adalah endpoint
