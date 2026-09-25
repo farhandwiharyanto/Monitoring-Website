@@ -19,7 +19,7 @@ Terakhir diperbarui: 26 September 2026 · commit `40f36b2`
 | 6 | Laporan SLA, error budget, target SLO | `8ce36cf` `375d52f` |
 | 7 | Jadwal on-call, escalation policy berjenjang, acknowledge | `9ab321d` `ea1601e` |
 | 8 (fondasi) | Lease scheduler, health cek DB, shutdown rapi, riwayat pengiriman notifikasi, tes unit & CI | `27e5581` `b6355fa` `40f36b2` |
-| 8 (fitur) | Status degraded & ambang latency per monitor | — |
+| 8 (fitur) | Status degraded & ambang latency per monitor | `76ede23` |
 
 Polanya: tiap phase jadi dua commit — server dulu, lalu klien & dokumentasi.
 
