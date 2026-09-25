@@ -3,7 +3,7 @@ import { hasAssertion, runAssertion } from "../lib/assertion.js";
 
 // HTTP(s) check: status code dalam range yang diharapkan, keyword opsional,
 // dan assertion opsional terhadap body JSON.
-function statusMatches(code, expected) {
+export function statusMatches(code, expected) {
   return String(expected || "200-299")
     .split(",")
     .map((s) => s.trim())

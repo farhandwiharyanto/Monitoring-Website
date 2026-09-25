@@ -1,0 +1,91 @@
+# Tiga pemeriksaan yang sebelumnya dijalankan manual dan karena itu sering
+# terlewat: tes logika server, kesejajaran migration dengan schema, dan
+# kelengkapan kamus terjemahan.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  server:
+    name: Tes server
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci
+        working-directory: server
+      - name: Schema Prisma valid
+        run: npx prisma validate
+        working-directory: server
+        env:
+          DATABASE_URL: postgresql://localhost:5432/pulsewatch
+      - name: Tes unit
+        run: npm test
+        working-directory: server
+
+  migrations:
+    name: Migration sejalan dengan schema
+    runs-on: ubuntu-latest
+    # Migration ditulis tangan (lihat docs/rencana.md: `prisma format` sengaja
+    # tidak dipakai), jadi selisih dengan schema hanya ketahuan bila benar-benar
+    # dijalankan pada database kosong.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: pw
+          POSTGRES_PASSWORD: pw
+          POSTGRES_DB: pwtest
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pw -d pwtest"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://pw:pw@localhost:5432/pwtest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci
+        working-directory: server
+      - name: Terapkan seluruh migration
+        run: npx prisma migrate deploy
+        working-directory: server
+      - name: Tidak ada selisih antara migration dan schema
+        run: |
+          npx prisma migrate diff \
+            --from-schema-datasource prisma/schema.prisma \
+            --to-schema-datamodel prisma/schema.prisma \
+            --exit-code
+        working-directory: server
+
+  client:
+    name: Build klien & kamus i18n
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - run: npm ci
+        working-directory: client
+      - name: Build
+        run: npm run build
+        working-directory: client
+      - name: Kedua kamus terjemahan sejajar
+        run: node scripts/check-i18n.mjs

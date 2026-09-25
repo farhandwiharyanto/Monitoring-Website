@@ -5,7 +5,7 @@ menjalankannya untuk diuji. Ditulis untuk sesi kerja berikutnya.
 
 [← Kembali ke README](../README.md)
 
-Terakhir diperbarui: 25 September 2026 · commit `9ab321d`
+Terakhir diperbarui: 26 September 2026 · commit `b6355fa`
 
 ## Sudah selesai
 
@@ -17,13 +17,47 @@ Terakhir diperbarui: 25 September 2026 · commit `9ab321d`
 | 4 | API key, webhook dua arah, status page berbasis tag, incident update | `3217a4a` `2cc0c10` |
 | 5 | Dependency antar-monitor, audit log | `4bd3c79` `d681eed` |
 | 6 | Laporan SLA, error budget, target SLO | `8ce36cf` `375d52f` |
-| 7 | Jadwal on-call, escalation policy berjenjang, acknowledge | `9ab321d` |
+| 7 | Jadwal on-call, escalation policy berjenjang, acknowledge | `9ab321d` `ea1601e` |
+| 8 (fondasi) | Lease scheduler, health cek DB, shutdown rapi, riwayat pengiriman notifikasi, tes unit & CI | `27e5581` `b6355fa` |
 
 Polanya: tiap phase jadi dua commit — server dulu, lalu klien & dokumentasi.
 
 ## Belum dikerjakan
 
-### Phase 8 — Monitor gRPC, Kafka, dan database (sedang–berat)
+Urutannya sengaja: fondasi lebih dulu, fitur berikutnya, tipe monitor baru
+paling akhir — supaya saat menambah permukaan baru sudah ada tes, CI, dan
+riwayat pengiriman notifikasi yang menjaganya.
+
+### Sisa fondasi
+
+- **Backup/restore konfigurasi.** Export sekarang hanya data (heartbeat,
+  monitor, audit). Tidak ada cara memindahkan seluruh konfigurasi — monitor,
+  notifikasi, status page, escalation policy — ke instance lain, jadi pindah
+  server berarti menyusun ulang semuanya dengan tangan.
+- **Tes yang menyentuh database.** Yang ada sekarang hanya logika murni.
+  `slaReport`, `blockingAncestor`, dan rantai eskalasi baru benar-benar teruji
+  bila dijalankan pada Postgres; job `migrations` di CI sudah menyiapkan
+  service Postgres yang bisa dipakai ulang untuk itu.
+
+### Fitur berikutnya
+
+- **Status degraded & ambang latency.** Status sekarang biner; layanan yang
+  responsnya naik dari 200 ms ke 8 detik tetap dihitung UP. Datanya sudah ada
+  di `response_time`. Perubahannya menyentuh banyak tempat karena `status.js`
+  dipakai scheduler, stats, metrics, status page, dan HeartbeatBar.
+- **Ulangi alert selama masih down.** Sekali kirim lalu senyap sampai pulih.
+  Sekaligus menambal utang teknis no. 7 di bawah.
+- **Feed RSS/Atom incident di status page.** Pengguna belum bisa berlangganan
+  kabar gangguan sama sekali. Murah dan tanpa dependency.
+- **Rollup harian + p95.** Heartbeat dipangkas 90 hari sehingga grafik latency
+  lama hilang (laporan SLA aman karena dihitung dari incident, bukan heartbeat).
+  Tabel agregat yang diisi sebelum prune memberi grafik setahun dengan biaya
+  kecil. Sekalian ganti `AVG` di `stats.js` dengan p95 — rata-rata menyembunyikan
+  ekor.
+- **2FA (TOTP).** Aplikasi ini memegang kredensial monitor terenkripsi dan URL
+  webhook, tapi login hanya password + rate limit.
+
+### Phase 9 — Monitor gRPC, Kafka, dan database (sedang–berat)
 
 Tiga jenis check baru di `server/src/checks/`, masing-masing menambah dependency
 npm (`@grpc/grpc-js`, `kafkajs`, dan driver database). Sebaiknya dikerjakan
@@ -33,13 +67,19 @@ Pola yang diikuti: tiap check mengembalikan `{ ok, message, ms }`, didaftarkan d
 `server/src/checks/index.js`, lalu tipe barunya ditambahkan ke `MONITOR_TYPES`
 dan ke daftar `TYPES` di `client/src/pages/MonitorForm.jsx`.
 
+Biaya tersembunyi terbesarnya bukan menulis check-nya, melainkan bahwa ketiganya
+tidak bisa diverifikasi tanpa target uji — broker Kafka, server gRPC, dan tiga
+database sekali pakai. Siapkan `docker-compose.test.yml` untuk itu, kalau tidak
+kodenya masuk tanpa pernah benar-benar dijalankan.
+
 ## Utang teknis yang diketahui
 
-1. **Halaman lama belum diperiksa secara visual di browser.** Halaman Laporan
-   dan halaman Audit log lolos build dan datanya benar, tapi tata letaknya belum
-   pernah dilihat. Halaman Phase 7 (On-call, kartu eskalasi, kontak on-call di
-   Users, field policy di form monitor) sudah diperiksa di Chrome, termasuk
-   lebar ponsel.
+1. **Beberapa halaman belum diperiksa secara visual di browser.** Halaman
+   Laporan, Audit log, dan tambahan Phase 8 di halaman Notifikasi (chip status,
+   banner channel gagal, panel riwayat) lolos build dan datanya sudah diperiksa
+   lewat API, tapi tata letaknya belum pernah dilihat. Halaman Phase 7 (On-call,
+   kartu eskalasi, kontak on-call di Users, field policy di form monitor) sudah
+   diperiksa di Chrome, termasuk lebar ponsel.
 2. **`dependencyInfo()` membaca seluruh tabel monitor tiap kali monitor
    di-decorate**, termasuk pada tiap siaran heartbeat. Murah selama jumlah
    monitor puluhan; perlu ditinjau ulang kalau nanti ratusan.
@@ -47,7 +87,9 @@ dan ke daftar `TYPES` di `client/src/pages/MonitorForm.jsx`.
    antara tindakan dan pencatatannya, tindakan bisa berhasil tanpa jejak. Ini
    pertukaran yang disengaja, dicatat di [audit-log.md](audit-log.md).
 4. **Rate limit API key dihitung per proses**, jadi perlu ditinjau bila instance
-   kelak direplikasi. Berlaku juga untuk rate limit endpoint ack.
+   kelak direplikasi. Berlaku juga untuk rate limit endpoint ack. (Duplikasi
+   *check* saat direplikasi sudah tidak jadi masalah sejak lease scheduler,
+   tapi rate limit tetap hidup sendiri-sendiri di tiap proses.)
 5. **Bundle klien 818 kB** (peringatan Vite). Belum pernah di-code-split.
 6. **Kontak on-call hanya bisa disetel admin.** Konfigurasi notifikasi berisi
    kredensial sehingga router-nya admin-only, jadi viewer yang ikut piket tidak
@@ -82,6 +124,18 @@ docker rm -f pwtest
 
 Login `admin` / `admin12345`, lalu ambil token dari `POST /api/auth/login`.
 
+Tes unit tidak butuh database sama sekali:
+
+```bash
+cd server && npm test        # 60 tes, ~1 detik
+```
+
+Isinya logika yang sulit diuji dengan tangan: assertion JSONPath, jendela
+maintenance berulang yang melintasi tengah malam, ambang alert sertifikat,
+penyaring multi-location, enkripsi kredensial, dan rate limit login. Zona waktu
+dikunci ke `Asia/Jakarta` lewat `server/test-setup.mjs` supaya hasilnya sama di
+laptop dan di CI.
+
 Memeriksa migration tidak melenceng dari schema:
 
 ```bash
@@ -90,8 +144,14 @@ cd server && npx prisma migrate diff \
   --to-schema-datamodel prisma/schema.prisma --exit-code
 ```
 
-Membandingkan kelengkapan dua kamus i18n: lihat `client/src/lib/i18n.jsx`,
-kedua kamus harus punya kunci yang sama persis (saat ini 567 kunci).
+Membandingkan kelengkapan dua kamus i18n (saat ini 582 kunci):
+
+```bash
+node scripts/check-i18n.mjs
+```
+
+Ketiganya dijalankan otomatis oleh [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)
+pada tiap push ke `main` dan tiap pull request.
 
 ## Hal yang gampang terlewat
 

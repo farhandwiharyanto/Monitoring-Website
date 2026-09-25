@@ -10,7 +10,8 @@
     "db:migrate": "prisma migrate deploy",
     "db:generate": "prisma generate",
     "db:studio": "prisma studio",
-    "migrate:sqlite": "node scripts/migrate-from-sqlite.js"
+    "migrate:sqlite": "node scripts/migrate-from-sqlite.js",
+    "test": "node --import ./test-setup.mjs --test test/*.test.js"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
