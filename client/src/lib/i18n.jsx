@@ -80,6 +80,10 @@ const id = {
     tooltipResponse: "Respons",
   },
   form: {
+    typeGrpc: "gRPC", typeGrpcDesc: "Tanya health service standar gRPC",
+    grpcService: "Nama service (opsional)", grpcServicePlaceholder: "mis. myapp.Orders",
+    grpcServiceHint: "Kosong = kesehatan server secara keseluruhan.",
+    grpcTls: "Pakai TLS",
     typePostgres: "PostgreSQL", typeMysql: "MySQL", typeRedis: "Redis",
     typeDbDesc: "Jalankan query ringan ke database", typeRedisDesc: "Kirim PING ke server Redis",
     connUri: "Connection string", connHint: "Disimpan terenkripsi dan tidak pernah dikirim balik ke browser.",
@@ -440,6 +444,10 @@ const en = {
     tooltipResponse: "Response",
   },
   form: {
+    typeGrpc: "gRPC", typeGrpcDesc: "Query the standard gRPC health service",
+    grpcService: "Service name (optional)", grpcServicePlaceholder: "e.g. myapp.Orders",
+    grpcServiceHint: "Empty = overall server health.",
+    grpcTls: "Use TLS",
     typePostgres: "PostgreSQL", typeMysql: "MySQL", typeRedis: "Redis",
     typeDbDesc: "Run a lightweight query against the database", typeRedisDesc: "Send PING to the Redis server",
     connUri: "Connection string", connHint: "Stored encrypted and never sent back to the browser.",

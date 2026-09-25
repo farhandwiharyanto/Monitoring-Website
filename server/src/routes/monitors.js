@@ -172,6 +172,14 @@ function resolveConnSecret(body, existing, type, errors) {
 function cleanCheckConfig(body, type, errors) {
   const input = body.check_config && typeof body.check_config === "object" && !Array.isArray(body.check_config) ? body.check_config : {};
   const out = {};
+  if (type === "grpc") {
+    const service = String(input.grpc_service ?? "").trim();
+    if (service) out.grpc_service = service.slice(0, 200);
+    // TLS menyala kecuali dimatikan eksplisit; layanan gRPC publik hampir
+    // selalu memakai TLS, dan salah tebak ke arah aman lebih baik.
+    if (input.grpc_tls === false) out.grpc_tls = false;
+    return Object.keys(out).length ? out : null;
+  }
   if (type === "postgres" || type === "mysql") {
     const query = String(input.query ?? "").trim();
     if (query) {
@@ -280,6 +288,10 @@ function validate(body, existing = null) {
     const conn = resolveConnSecret(body, existing, m.type, errors);
     if (conn !== undefined) m.conn_secret = conn;
     m.check_config = cleanCheckConfig(body, m.type, errors);
+  } else if (m.type === "grpc") {
+    // gRPC memakai hostname/port biasa; yang khusus hanya opsinya
+    m.conn_secret = null;
+    m.check_config = cleanCheckConfig(body, m.type, errors);
   } else {
     // Ganti tipe ke non-database: kredensial lamanya tidak ditinggalkan di DB
     m.conn_secret = null;
@@ -309,7 +321,7 @@ function validate(body, existing = null) {
   } else if (!m.hostname) {
     errors.push("Hostname wajib diisi");
   }
-  if (m.type === "tcp" && !(m.port > 0 && m.port < 65536)) errors.push("Port tidak valid");
+  if ((m.type === "tcp" || m.type === "grpc") && !(m.port > 0 && m.port < 65536)) errors.push("Port tidak valid");
 
   return { m, errors };
 }

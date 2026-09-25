@@ -17,6 +17,7 @@ const TYPES = [
   { v: "postgres", label: "form.typePostgres", desc: "form.typeDbDesc" },
   { v: "mysql", label: "form.typeMysql", desc: "form.typeDbDesc" },
   { v: "redis", label: "form.typeRedis", desc: "form.typeRedisDesc" },
+  { v: "grpc", label: "form.typeGrpc", desc: "form.typeGrpcDesc" },
 ];
 
 // Tipe yang targetnya berupa connection string, bukan hostname/URL
@@ -272,11 +273,36 @@ export default function MonitorForm() {
             )}
           </div>
         ) : (
-          <div className={clsx("grid gap-4", form.type === "tcp" ? "md:grid-cols-[1fr_140px]" : form.type === "dns" ? "md:grid-cols-[1fr_120px]" : "")}>
+          <div className={clsx("grid gap-4", form.type === "tcp" || form.type === "grpc" ? "md:grid-cols-[1fr_140px]" : form.type === "dns" ? "md:grid-cols-[1fr_120px]" : "")}>
             <div><label className="label">{t("form.hostname")}</label><input className="input font-mono" value={form.hostname} onChange={set("hostname")} placeholder="example.com" /></div>
-            {form.type === "tcp" && <div><label className="label">{t("form.port")}</label><input className="input" type="number" min="1" max="65535" value={form.port} onChange={set("port")} placeholder="443" /></div>}
+            {(form.type === "tcp" || form.type === "grpc") && <div><label className="label">{t("form.port")}</label><input className="input" type="number" min="1" max="65535" value={form.port} onChange={set("port")} placeholder={form.type === "grpc" ? "50051" : "443"} /></div>}
             {form.type === "dns" && <div><label className="label">{t("form.record")}</label>
               <select className="input" value={form.dns_resolve_type} onChange={set("dns_resolve_type")}>{["A", "AAAA", "CNAME", "MX", "NS", "TXT", "SOA"].map((r) => <option key={r}>{r}</option>)}</select></div>}
+          </div>
+        )}
+        {form.type === "grpc" && (
+          <div className="grid md:grid-cols-2 gap-4">
+            <div>
+              <label className="label">{t("form.grpcService")}</label>
+              <input
+                className="input font-mono"
+                value={form.check_config?.grpc_service || ""}
+                onChange={(e) => setForm((f) => ({ ...f, check_config: { ...f.check_config, grpc_service: e.target.value } }))}
+                placeholder={t("form.grpcServicePlaceholder")}
+              />
+              <p className="text-xs text-muted mt-1.5">{t("form.grpcServiceHint")}</p>
+            </div>
+            <div className="flex items-end pb-6">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  className="accent-accent"
+                  checked={form.check_config?.grpc_tls !== false}
+                  onChange={(e) => setForm((f) => ({ ...f, check_config: { ...f.check_config, grpc_tls: e.target.checked } }))}
+                />
+                {t("form.grpcTls")}
+              </label>
+            </div>
           </div>
         )}
         {form.type === "dns" && <div><label className="label">{t("form.dnsExpected")}</label><input className="input font-mono" value={form.dns_expected} onChange={set("dns_expected")} placeholder="mis. 1.2.3.4" /></div>}

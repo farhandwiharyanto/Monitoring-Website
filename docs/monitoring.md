@@ -175,6 +175,33 @@ ikut ke export.
 
 Untuk menguji ketiganya, ada `docker-compose.test.yml` di root repo.
 
+## Monitor gRPC
+
+Memakai protokol health checking standar gRPC (`grpc.health.v1.Health/Check`),
+yang sama dengan yang dipakai Kubernetes dan service mesh. Karena protokolnya
+baku, monitor tidak perlu tahu apa pun tentang API milik service yang dipantau —
+cukup hostname dan portnya.
+
+Nama service boleh diisi untuk menanyakan komponen tertentu (`myapp.Orders`);
+kosong berarti kesehatan server secara keseluruhan. TLS menyala secara bawaan.
+
+Pemetaan jawabannya:
+
+| Jawaban | Status | Alasan |
+|---|---|---|
+| `SERVING` | UP | sehat |
+| `NOT_SERVING` | DOWN | service melaporkan dirinya sakit |
+| `SERVICE_UNKNOWN` | DOWN | nama service-nya salah ketik atau sudah tidak ada |
+| `UNIMPLEMENTED` | **UP** | server hidup dan bicara gRPC, hanya tidak memasang health service |
+
+Baris terakhir itu disengaja: banyak service tidak memasang health service sama
+sekali, dan menandainya DOWN akan menghasilkan alert palsu untuk service yang
+sebenarnya sehat. Pesannya menyebutkan hal itu supaya tidak membingungkan.
+
+Sertifikat TLS tidak divalidasi pada check ini — yang diuji adalah "service ini
+menjawab", bukan rantai sertifikatnya, dan sertifikat internal sering tidak
+dikenal. Monitor HTTPS biasa punya pemeriksaan sertifikat tersendiri.
+
 ## Pengingat selama masih down
 
 Isi `renotify_minutes` pada sebuah monitor dan kabar "masih down" diulang ke

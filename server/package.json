@@ -14,6 +14,8 @@
     "test": "node --import ./test-setup.mjs --test test/*.test.js"
   },
   "dependencies": {
+    "@grpc/grpc-js": "^1.14.5",
+    "@grpc/proto-loader": "^0.8.1",
     "@prisma/client": "^6.19.3",
     "bcryptjs": "^2.4.3",
     "dotenv": "^16.4.5",
