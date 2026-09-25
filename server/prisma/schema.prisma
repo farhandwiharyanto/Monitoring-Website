@@ -92,6 +92,14 @@ model Monitor {
   // Status heartbeat-nya tetap UP, jadi uptime & SLA tidak ikut berubah.
   latency_threshold_ms  Int?
 
+  // Connection string untuk monitor database (postgres/mysql/redis), disimpan
+  // terenkripsi seperti kredensial HTTP — isinya hampir selalu memuat password.
+  conn_secret           String?
+  // Opsi khusus per tipe check yang BUKAN rahasia: query yang dijalankan, nama
+  // service gRPC, topik Kafka. Satu kolom JSON supaya tipe check berikutnya
+  // tidak menambah kolom lagi.
+  check_config          Json?
+
   // Jeda pengingat selama monitor masih down (menit). null = tidak mengingatkan.
   // Berbeda dari eskalasi: eskalasi memanggil orang lain secara berjenjang,
   // ini hanya mengulang kabar ke channel yang sama supaya gangguan panjang

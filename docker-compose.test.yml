@@ -1,0 +1,34 @@
+# Target uji untuk tipe monitor database. Bukan bagian dari deployment.
+#
+#   docker compose -f docker-compose.test.yml up -d
+#   docker compose -f docker-compose.test.yml down -v
+#
+# `name` WAJIB ada dan wajib berbeda dari compose utama. Tanpa itu, Compose
+# memakai nama direktori sebagai nama proyek, dan service bernama `postgres` di
+# sini akan dianggap service yang sama dengan `postgres` di docker-compose.yml:
+# container produksinya digantikan dan volume datanya ikut dipasang ke sini.
+name: pulsewatch-test
+
+services:
+  # Nama service pun sengaja diberi awalan, sebagai lapis pengaman kedua
+  test-postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: pw
+      POSTGRES_PASSWORD: pw
+      POSTGRES_DB: pwtest
+    ports: ["55432:5432"]
+    # Tanpa volume: data uji memang tidak perlu bertahan, dan tidak adanya
+    # volume membuat compose ini tidak mungkin menempel ke data sungguhan.
+    tmpfs: ["/var/lib/postgresql/data"]
+
+  test-mysql:
+    image: mysql:8
+    environment:
+      MYSQL_ROOT_PASSWORD: pw
+      MYSQL_DATABASE: pwtest
+    ports: ["53306:3306"]
+
+  test-redis:
+    image: redis:7-alpine
+    ports: ["56379:6379"]

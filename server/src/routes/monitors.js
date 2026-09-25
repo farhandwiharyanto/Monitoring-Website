@@ -4,7 +4,7 @@ import { config } from "../config.js";
 import { requireAuth, requireAdmin } from "../lib/auth.js";
 import { decorateMonitors, findMonitor, dashboardStats, monitorInclude, knownLocations } from "../lib/stats.js";
 import { scheduleNow, unschedule, checkCertificateNow, locationFilter } from "../scheduler.js";
-import { runCheck, MONITOR_TYPES } from "../checks/index.js";
+import { runCheck, MONITOR_TYPES, DATABASE_TYPES } from "../checks/index.js";
 import { encryptSecret, decryptSecret } from "../lib/crypto.js";  // decryptSecret: mempertahankan password lama saat edit
 import { ASSERTION_OPERATORS, operatorNeedsValue, parsePath, describeAssertion } from "../lib/assertion.js";
 import { newPushToken } from "./push.js";
@@ -137,6 +137,56 @@ function cleanSloTarget(body, errors) {
   return Math.round(n * 10000) / 10000;
 }
 
+// Skema yang sah per tipe database. Dicek di depan supaya salah tempel
+// connection string ketahuan saat menyimpan, bukan nanti saat check pertama.
+const CONN_SCHEMES = {
+  postgres: ["postgres://", "postgresql://"],
+  mysql: ["mysql://"],
+  redis: ["redis://", "rediss://"],
+};
+
+// Connection string diperlakukan seperti kredensial monitor lainnya: disimpan
+// terenkripsi, dan form yang tidak mengirimnya berarti "jangan diubah" —
+// sehingga mengedit monitor tanpa mengetik ulang password tetap bisa.
+function resolveConnSecret(body, existing, type, errors) {
+  if (body.conn_uri === undefined) {
+    if (!existing?.conn_secret) errors.push("Connection string wajib diisi");
+    return undefined;
+  }
+  const raw = String(body.conn_uri).trim();
+  if (!raw) {
+    // Kosong saat mengedit = pertahankan yang lama, sama seperti field password
+    if (!existing?.conn_secret) errors.push("Connection string wajib diisi");
+    return undefined;
+  }
+  const schemes = CONN_SCHEMES[type] || [];
+  if (!schemes.some((prefix) => raw.toLowerCase().startsWith(prefix))) {
+    errors.push(`Connection string ${type} harus diawali ${schemes.join(" atau ")}`);
+    return undefined;
+  }
+  return encryptSecret(raw.slice(0, 2048));
+}
+
+// Opsi non-rahasia per tipe check. Hanya kunci yang dikenal yang disimpan,
+// supaya kolom JSON ini tidak berubah jadi tempat menaruh apa saja.
+function cleanCheckConfig(body, type, errors) {
+  const input = body.check_config && typeof body.check_config === "object" && !Array.isArray(body.check_config) ? body.check_config : {};
+  const out = {};
+  if (type === "postgres" || type === "mysql") {
+    const query = String(input.query ?? "").trim();
+    if (query) {
+      // Query monitor dijalankan berulang kali selamanya; yang mengubah data
+      // tidak pada tempatnya di sini dan gampang tidak disengaja.
+      if (!/^\s*(select|show|explain)\b/i.test(query)) {
+        errors.push("Query monitor harus diawali SELECT, SHOW, atau EXPLAIN");
+      } else {
+        out.query = query.slice(0, 500);
+      }
+    }
+  }
+  return Object.keys(out).length ? out : null;
+}
+
 // Ambang latency (ms). Di atas ini monitor dianggap degraded — masih hidup,
 // tapi lebih lambat dari yang dijanjikan. Kosong berarti tidak dinilai.
 function cleanLatencyThreshold(body, errors) {
@@ -158,7 +208,7 @@ function shape(monitor, user) {
   const isAdmin = user?.role === "admin";
   // auth_secret sudah dibuang decorateMonitors; di sini hanya username Basic Auth
   // yang dibuka kembali agar form bisa menampilkannya. Password/token tidak pernah keluar.
-  const { push_token, auth_secret, auth_username, ...rest } = monitor;
+  const { push_token, auth_secret, conn_secret, auth_username, ...rest } = monitor;
   const out = { ...rest, assertion_summary: describeAssertion(monitor) };
 
   // Username Basic Auth hanya untuk admin yang mengedit monitor
@@ -225,6 +275,17 @@ function validate(body, existing = null) {
     m.assertion_value = null;
   }
 
+  // Monitor database menyimpan connection string terenkripsi dan opsinya sendiri
+  if (DATABASE_TYPES.includes(m.type)) {
+    const conn = resolveConnSecret(body, existing, m.type, errors);
+    if (conn !== undefined) m.conn_secret = conn;
+    m.check_config = cleanCheckConfig(body, m.type, errors);
+  } else {
+    // Ganti tipe ke non-database: kredensial lamanya tidak ditinggalkan di DB
+    m.conn_secret = null;
+    m.check_config = null;
+  }
+
   // Webhook aksi berlaku untuk semua tipe monitor, termasuk push dan ping
   Object.assign(m, cleanActionWebhook(body, errors));
 
@@ -243,6 +304,8 @@ function validate(body, existing = null) {
     }
   } else if (m.type === "push") {
     // Tidak butuh target: heartbeat datang dari luar
+  } else if (DATABASE_TYPES.includes(m.type)) {
+    // Targetnya ada di dalam connection string, bukan di field hostname
   } else if (!m.hostname) {
     errors.push("Hostname wajib diisi");
   }

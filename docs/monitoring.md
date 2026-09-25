@@ -143,6 +143,38 @@ Di Prometheus: `pulsewatch_monitor_degraded` dan
 monitor degraded, jadi alert ketersediaan yang sudah terpasang tidak ikut
 berbunyi hanya karena sebuah layanan melambat.
 
+## Monitor database
+
+Tiga tipe check baru: **PostgreSQL**, **MySQL**, dan **Redis**. Targetnya berupa
+connection string, bukan hostname:
+
+```
+postgres://user:password@host:5432/nama_db
+mysql://user:password@host:3306/nama_db
+redis://host:6379
+```
+
+Connection string disimpan terenkripsi seperti kredensial monitor lainnya dan
+**tidak pernah dikirim balik ke browser**. Saat mengedit monitor, field-nya
+kosong dan boleh dibiarkan kosong — yang tersimpan tetap dipakai.
+
+Bawaannya `SELECT 1` (Postgres/MySQL) dan `PING` (Redis). Query sendiri boleh
+diisi untuk memastikan sebuah tabel benar-benar terbaca, bukan sekadar server
+hidup. Query wajib diawali `SELECT`, `SHOW`, atau `EXPLAIN`: query monitor
+dijalankan berulang kali selamanya, dan yang mengubah data tidak pada tempatnya
+di sana.
+
+Tiap check membuka koneksi baru lalu menutupnya. Monitor yang memantau kesehatan
+database justru tidak boleh meninggalkan koneksi menganggur di sana, dan koneksi
+yang dipakai ulang bisa menyembunyikan persis kegagalan yang sedang dicari —
+pool penuh, autentikasi kedaluwarsa, DNS berubah.
+
+Pesan kegagalan dari driver disaring dulu: apa pun yang berbentuk
+`://user:password@` disamarkan, karena pesan heartbeat terbaca oleh viewer dan
+ikut ke export.
+
+Untuk menguji ketiganya, ada `docker-compose.test.yml` di root repo.
+
 ## Pengingat selama masih down
 
 Isi `renotify_minutes` pada sebuah monitor dan kabar "masih down" diulang ke

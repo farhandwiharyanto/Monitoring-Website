@@ -118,7 +118,7 @@ export async function decorateMonitors(monitors, opts = {}) {
     const hb = beats.get(m.id);
     const last = hb[hb.length - 1];
     const mw = maint.get(m.id);
-    const { tags, notifications, auth_secret, ...rest } = m;
+    const { tags, notifications, auth_secret, conn_secret, ...rest } = m;
     // status: 0 down, 1 up, 2 pending, 3 paused, 4 maintenance, 5 degraded.
     // Degraded hanya soal tampilan — heartbeat-nya tetap UP, jadi uptime dan
     // laporan SLA tidak ikut berubah (lihat lib/status.js).
@@ -166,6 +166,9 @@ export async function decorateMonitors(monitors, opts = {}) {
       // auth_secret sudah dibuang di atas. Username Basic Auth bukan rahasia dan
       // dibutuhkan form untuk menampilkan kembali nilainya; password tidak pernah keluar.
       has_auth: !!m.auth_type && m.auth_type !== "none",
+      // Connection string tidak pernah keluar dari server; form hanya perlu
+      // tahu sudah terisi atau belum agar bisa membiarkannya kosong saat edit.
+      has_conn: !!m.conn_secret,
       auth_username: basicAuthUsername(m),
       locations,
       location_split: split,

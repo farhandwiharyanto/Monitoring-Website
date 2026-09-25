@@ -14,7 +14,19 @@ const TYPES = [
   { v: "ping", label: "form.typePing", desc: "form.typePingDesc" },
   { v: "dns", label: "form.typeDns", desc: "form.typeDnsDesc" },
   { v: "push", label: "form.typePush", desc: "form.typePushDesc" },
+  { v: "postgres", label: "form.typePostgres", desc: "form.typeDbDesc" },
+  { v: "mysql", label: "form.typeMysql", desc: "form.typeDbDesc" },
+  { v: "redis", label: "form.typeRedis", desc: "form.typeRedisDesc" },
 ];
+
+// Tipe yang targetnya berupa connection string, bukan hostname/URL
+const DB_TYPES = ["postgres", "mysql", "redis"];
+// Contoh yang ditampilkan di placeholder, sekaligus mengisyaratkan skema yang sah
+const CONN_PLACEHOLDER = {
+  postgres: "postgres://user:password@host:5432/nama_db",
+  mysql: "mysql://user:password@host:3306/nama_db",
+  redis: "redis://host:6379",
+};
 
 const OPERATORS = [
   ["eq", "form.opEq"], ["ne", "form.opNe"], ["gt", "form.opGt"], ["lt", "form.opLt"],
@@ -34,6 +46,9 @@ const empty = {
   escalation_policy_id: "",
   // Target SLO dalam persen; "" = tanpa target
   slo_target: "",
+  conn_uri: "",
+  has_conn: false,
+  check_config: {},
   latency_threshold_ms: "",
   renotify_minutes: "",
   // HTTP lanjutan
@@ -87,6 +102,11 @@ export default function MonitorForm() {
           parent_id: m.parent_id ?? "",
           escalation_policy_id: m.escalation_policy_id ?? "",
           slo_target: m.slo_target ?? "",
+          // Connection string tidak pernah dikirim balik server; field-nya
+          // dibiarkan kosong dan hanya diisi bila memang mau diganti.
+          conn_uri: "",
+          has_conn: !!m.has_conn,
+          check_config: m.check_config || {},
           latency_threshold_ms: m.latency_threshold_ms ?? "",
           renotify_minutes: m.renotify_minutes ?? "",
           auth_type: m.auth_type || "none",
@@ -180,6 +200,7 @@ export default function MonitorForm() {
   };
 
   const isPush = form.type === "push";
+  const isDb = DB_TYPES.includes(form.type);
   // Pratinjau ekspresi yang akan dijalankan server, mis. $.status eq "ok"
   const assertionPreview =
     form.assertion_path && form.assertion_operator
@@ -221,6 +242,35 @@ export default function MonitorForm() {
           </div>
         ) : isPush ? (
           <p className="text-sm text-muted">{t("form.pushNoTarget")}</p>
+        ) : isDb ? (
+          <div className="space-y-4">
+            <div>
+              <label className="label">{t("form.connUri")}</label>
+              <input
+                className="input font-mono"
+                type="password"
+                autoComplete="new-password"
+                value={form.conn_uri}
+                onChange={set("conn_uri")}
+                placeholder={CONN_PLACEHOLDER[form.type]}
+              />
+              {/* Connection string tidak pernah dikirim balik oleh server, jadi
+                  saat mengedit field ini kosong dan boleh dibiarkan kosong */}
+              <p className="text-xs text-muted mt-1.5">{id && form.has_conn ? t("form.connKeep") : t("form.connHint")}</p>
+            </div>
+            {form.type !== "redis" && (
+              <div>
+                <label className="label">{t("form.dbQuery")}</label>
+                <input
+                  className="input font-mono"
+                  value={form.check_config?.query || ""}
+                  onChange={(e) => setForm((f) => ({ ...f, check_config: { ...f.check_config, query: e.target.value } }))}
+                  placeholder="SELECT 1"
+                />
+                <p className="text-xs text-muted mt-1.5">{t("form.dbQueryHint")}</p>
+              </div>
+            )}
+          </div>
         ) : (
           <div className={clsx("grid gap-4", form.type === "tcp" ? "md:grid-cols-[1fr_140px]" : form.type === "dns" ? "md:grid-cols-[1fr_120px]" : "")}>
             <div><label className="label">{t("form.hostname")}</label><input className="input font-mono" value={form.hostname} onChange={set("hostname")} placeholder="example.com" /></div>
