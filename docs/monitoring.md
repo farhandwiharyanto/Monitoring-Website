@@ -108,6 +108,41 @@ sebenarnya berarti menjalankan worker di host atau region lain.
 
 Lokasi yang aktif 7 hari terakhir bisa dilihat di `GET /api/monitors/locations`.
 
+## Status degraded & ambang latency
+
+Sampai sebelum ini status monitor biner: hidup atau mati. Layanan yang
+responsnya naik dari 200 ms ke 8 detik tetap dihitung **UP** dan tidak ada yang
+memberi tahu siapa pun. Isi `latency_threshold_ms` pada sebuah monitor dan
+respons di atas ambang itu menandainya **degraded** — masih hidup, tapi lebih
+lambat dari yang dijanjikan.
+
+Yang penting: **heartbeat-nya tetap berstatus UP.** Degraded disimpan sebagai
+kolom tersendiri, bukan nilai status baru, sehingga uptime, laporan SLA, error
+budget, dan seluruh riwayat lama tidak berubah artinya sedikit pun. Yang
+bertambah hanya satu penanda kualitas di atasnya.
+
+Alert dikirim sekali saat masuk degraded dan sekali saat kembali normal, ke
+channel notifikasi monitor itu. Tidak ada incident yang dibuka dan rantai
+eskalasi tidak ikut jalan — layanannya tidak mati. Maintenance window dan
+dependency yang sedang menahan alert juga menahan alert latency, sama seperti
+alert down.
+
+**Histeresis.** Keluar dari degraded butuh turun di bawah ambang dikali
+`LATENCY_RECOVERY_RATIO` (bawaan 0,9). Dengan ambang 500 ms, monitor masuk
+degraded di atas 500 ms dan baru keluar di bawah 450 ms. Tanpa jeda itu,
+layanan yang bertahan tepat di sekitar ambang akan mengirim alert bolak-balik
+setiap interval.
+
+Di UI: badge status oranye, batang heartbeat oranye pada periode melambat,
+waktu respons berwarna di daftar monitor, dan jumlah yang melambat disebut di
+kartu "Up" pada dashboard. Status page publik menampilkan "Sebagian sistem
+berjalan lebih lambat dari biasanya" — ambangnya sendiri tidak dibuka ke publik.
+
+Di Prometheus: `pulsewatch_monitor_degraded` dan
+`pulsewatch_monitor_latency_threshold_ms`. `pulsewatch_monitor_up` tetap 1 untuk
+monitor degraded, jadi alert ketersediaan yang sudah terpasang tidak ikut
+berbunyi hanya karena sebuah layanan melambat.
+
 ## Riwayat pengiriman notifikasi
 
 Setiap pengiriman dicatat — berhasil maupun gagal — beserta jumlah percobaan,

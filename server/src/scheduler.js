@@ -3,9 +3,9 @@ import { prisma, pruneOldHeartbeats, pruneOldAuditLogs, pruneOldNotificationLogs
 import { config, isPrimaryLocation } from "./config.js";
 import { runCheck } from "./checks/index.js";
 import { fetchCertInfo, tlsTarget } from "./checks/cert.js";
-import { notifyMonitorEvent, notifyCertExpiry } from "./notifications/index.js";
+import { notifyMonitorEvent, notifyCertExpiry, notifyLatencyEvent } from "./notifications/index.js";
 import { triggerActionWebhook } from "./lib/actionWebhook.js";
-import { STATUS } from "./lib/status.js";
+import { STATUS, evaluateLatency } from "./lib/status.js";
 import { findMonitor } from "./lib/stats.js";
 import { isInMaintenance } from "./lib/maintenance.js";
 import { blockingAncestor } from "./lib/dependency.js";
@@ -188,12 +188,32 @@ export async function applyResult(monitor, { status, message, ms, assertion }, o
     orderBy: [{ created_at: "desc" }, { id: "desc" }],
   });
   const prevStatus = prev ? prev.status : null;
-  const important = status !== STATUS.PENDING && prevStatus !== status;
+
+  // Degraded: hidup tapi lebih lambat dari yang dijanjikan. Dihitung di sini
+  // karena heartbeat sebelumnya sudah diambil — ambang keluarnya sedikit lebih
+  // rendah daripada ambang masuknya, supaya tidak bolak-balik di sekitar batas.
+  const wasDegraded = !!prev?.degraded;
+  const degraded =
+    status === STATUS.UP &&
+    evaluateLatency({
+      thresholdMs: monitor.latency_threshold_ms,
+      ms,
+      wasDegraded,
+      recoveryRatio: config.latencyRecoveryRatio,
+    });
+
+  // Perpindahan masuk/keluar degraded ikut ditandai penting supaya muncul di
+  // timeline monitor, sama seperti perpindahan up/down. Check pertama sebuah
+  // monitor juga terhitung: kalau layanannya memang sudah lambat sejak awal,
+  // itu justru yang perlu diketahui lebih dulu.
+  const latencyChanged = status === STATUS.UP && degraded !== wasDegraded;
+  const availabilityChanged = prevStatus !== null && prevStatus !== status;
+  const important = (status !== STATUS.PENDING && prevStatus !== status) || latencyChanged;
 
   const beat = await prisma.heartbeat.create({
     data: {
       monitor_id: monitor.id, status, message, response_time: ms ?? null,
-      important, maintenance: inMaint, location,
+      important, maintenance: inMaint, location, degraded,
       assertion_ok: assertion ? assertion.ok : null,
       assertion_message: assertion ? assertion.message : null,
     },
@@ -257,6 +277,19 @@ export async function applyResult(monitor, { status, message, ms, assertion }, o
     }
   }
 
+  // Alert latency berdiri sendiri dari alert down/recover: monitornya tidak
+  // mati, jadi tidak ada incident yang dibuka dan rantai eskalasi tidak ikut
+  // jalan. Penjaganya sama — maintenance window dan induk yang sedang down
+  // tetap menahannya, supaya satu gangguan tidak berlipat jadi banyak pesan.
+  // Saat monitor baru saja pulih dan ternyata masih lambat, dua pesan yang
+  // berbeda isinya memang dikirim — "sudah UP" dan "tapi melambat". Yang tidak
+  // dikirim adalah pasangan "sudah UP" + "latency normal", karena pesan
+  // pemulihannya sudah memuat kabar itu.
+  const alertLatency = latencyChanged && (!availabilityChanged || degraded);
+  if (alertLatency && !inMaint && !blocker) {
+    notifyLatencyEvent(monitor, beat, { degraded }).catch((e) => console.error("[notify:latency]", e));
+  }
+
   await broadcast(monitor.id, beat, { important, status, inMaint });
   return beat;
 }
@@ -285,7 +318,7 @@ async function broadcast(monitorId, beat, { important, status, inMaint }) {
   io.to("admin").emit("heartbeat", { monitorId, heartbeat: beat, monitor: decorated, location: beat.location });
   if (important) io.to("admin").emit("monitor:status", { monitorId, status });
   io.emit("public:heartbeat", {
-    monitorId, status: decorated.status, maintenance: inMaint,
+    monitorId, status: decorated.status, maintenance: inMaint, degraded: beat.degraded,
     response_time: beat.response_time, created_at: beat.created_at,
   });
 }

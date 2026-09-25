@@ -21,6 +21,9 @@
   --c-up: 34 197 94;
   --c-down: 239 68 68;
   --c-pending: 245 158 11;
+  /* Degraded oranye, sengaja dibedakan dari pending yang kuning: pending itu
+     keadaan sesaat saat retry, degraded bertahan sampai layanannya membaik */
+  --c-degraded: 249 115 22;
   --c-maint: 129 140 248;
   --scrollbar-thumb: #1f2937;
 }
@@ -42,6 +45,7 @@
   --c-up: 22 163 74;
   --c-down: 220 38 38;
   --c-pending: 217 119 6;
+  --c-degraded: 234 88 12;
   --c-maint: 79 70 229;
   --scrollbar-thumb: #cbd5e1;
 }

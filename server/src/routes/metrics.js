@@ -50,12 +50,23 @@ metricsRouter.get("/", async (req, res) => {
   const base = (m) => ({ monitor_id: m.id, monitor: m.name, type: m.type });
 
   metric(lines, "pulsewatch_monitor_status",
-    "Status monitor (0=down, 1=up, 2=pending, 3=paused, 4=maintenance) pada lokasi primary", "gauge",
+    "Status monitor (0=down, 1=up, 2=pending, 3=paused, 4=maintenance, 5=degraded) pada lokasi primary", "gauge",
     monitors.map((m) => [labels(base(m)), m.status]));
 
+  // Degraded tetap dihitung up: layanannya hidup, hanya lebih lambat dari
+  // ambangnya. Alert ketersediaan yang sudah terpasang karena itu tidak
+  // ikut berbunyi hanya karena sebuah monitor melambat.
   metric(lines, "pulsewatch_monitor_up",
-    "1 bila monitor up, 0 bila tidak (maintenance & paused dihitung 0)", "gauge",
-    monitors.map((m) => [labels(base(m)), m.status === 1 ? 1 : 0]));
+    "1 bila monitor up atau degraded, 0 bila tidak (maintenance & paused dihitung 0)", "gauge",
+    monitors.map((m) => [labels(base(m)), m.status === 1 || m.status === 5 ? 1 : 0]));
+
+  metric(lines, "pulsewatch_monitor_degraded",
+    "1 bila respons terakhir melewati ambang latency monitor", "gauge",
+    monitors.map((m) => [labels(base(m)), m.last_degraded ? 1 : 0]));
+
+  metric(lines, "pulsewatch_monitor_latency_threshold_ms",
+    "Ambang latency monitor dalam milidetik (hanya monitor yang menyetelnya)", "gauge",
+    monitors.filter((m) => m.latency_threshold_ms).map((m) => [labels(base(m)), m.latency_threshold_ms]));
 
   metric(lines, "pulsewatch_monitor_response_time_ms",
     "Response time pengecekan terakhir dalam milidetik", "gauge",
@@ -139,7 +150,7 @@ metricsRouter.get("/", async (req, res) => {
     monitors.filter((m) => m.last_assertion_ok !== null && m.last_assertion_ok !== undefined)
       .map((m) => [labels(base(m)), m.last_assertion_ok ? 1 : 0]));
 
-  const byStatus = { down: 0, up: 1, pending: 2, paused: 3, maintenance: 4 };
+  const byStatus = { down: 0, up: 1, pending: 2, paused: 3, maintenance: 4, degraded: 5 };
   metric(lines, "pulsewatch_monitors_total", "Jumlah monitor per status", "gauge",
     Object.entries(byStatus).map(([name, code]) => [labels({ status: name }), monitors.filter((m) => m.status === code).length]));
 

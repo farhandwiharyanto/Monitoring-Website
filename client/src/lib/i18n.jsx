@@ -17,7 +17,7 @@ const id = {
     optional: "opsional", seconds: "detik", never: "—", monitor: "monitor", viewAll: "Lihat semua",
     export: "Export", download: "Unduh", none: "Tidak ada",
   },
-  status: { 0: "Down", 1: "Up", 2: "Pending", 3: "Paused", 4: "Maintenance" },
+  status: { 0: "Down", 1: "Up", 2: "Pending", 3: "Paused", 4: "Maintenance", 5: "Degraded" },
   time: { agoS: "{n}s lalu", agoM: "{n}m lalu", agoH: "{n}j lalu", agoD: "{n}h lalu", hour: "jam", day: "hari" },
   nav: {
     dashboard: "Dashboard", monitors: "Monitors", maintenance: "Maintenance", notifications: "Notifikasi",
@@ -27,6 +27,7 @@ const id = {
   },
   login: { subtitle: "Masuk ke dashboard admin", username: "Username", password: "Password", submit: "Masuk", busy: "Memproses…" },
   dash: {
+    degradedSub: "{n} melambat",
     title: "Dashboard", subtitle: "Ringkasan status semua monitor",
     up: "Up", down: "Down", ofMonitors: "dari {n} monitor",
     downSub: "{pending} pending · {maint} maintenance · {paused} paused",
@@ -321,6 +322,12 @@ const id = {
     hint: "Persen uptime yang dijanjikan, antara 0 dan 100. Kosongkan bila monitor ini tidak punya target — uptime-nya tetap dilaporkan, hanya tanpa error budget.",
     budgetPreview: "Target {target}% berarti jatah downtime sekitar {duration} per 30 hari.",
   },
+  latency: {
+    label: "Ambang latency (ms)", placeholder: "mis. 800",
+    hint: "Di atas angka ini monitor ditandai degraded: masih hidup, tapi lebih lambat dari yang dijanjikan. Uptime dan laporan SLA tidak terpengaruh. Kosongkan bila kecepatannya tidak dinilai.",
+    badge: "Melambat", threshold: "Ambang {ms} ms",
+    over: "{ms} ms, di atas ambang {threshold} ms",
+  },
   incident: {
     updates: "Kabar untuk pengguna", addUpdate: "Tulis kabar",
     noUpdates: "Belum ada kabar yang dipublikasikan.",
@@ -336,6 +343,7 @@ const id = {
     pending: "Sebagian sistem sedang diperiksa",
     down: "Sebagian sistem mengalami gangguan",
     maintenance: "Sebagian sistem dalam maintenance terjadwal",
+    degraded: "Sebagian sistem berjalan lebih lambat dari biasanya",
     uptime30: "uptime 30 hari",
     noMonitors: "Belum ada monitor pada halaman ini.",
     incidents7d: "Incident 7 hari terakhir",
@@ -356,7 +364,7 @@ const en = {
     optional: "optional", seconds: "seconds", never: "—", monitor: "monitor", viewAll: "View all",
     export: "Export", download: "Download", none: "None",
   },
-  status: { 0: "Down", 1: "Up", 2: "Pending", 3: "Paused", 4: "Maintenance" },
+  status: { 0: "Down", 1: "Up", 2: "Pending", 3: "Paused", 4: "Maintenance", 5: "Degraded" },
   time: { agoS: "{n}s ago", agoM: "{n}m ago", agoH: "{n}h ago", agoD: "{n}d ago", hour: "hour", day: "day" },
   nav: {
     dashboard: "Dashboard", monitors: "Monitors", maintenance: "Maintenance", notifications: "Notifications",
@@ -366,6 +374,7 @@ const en = {
   },
   login: { subtitle: "Sign in to the admin dashboard", username: "Username", password: "Password", submit: "Sign in", busy: "Signing in…" },
   dash: {
+    degradedSub: "{n} slow",
     title: "Dashboard", subtitle: "Status overview of every monitor",
     up: "Up", down: "Down", ofMonitors: "of {n} monitors",
     downSub: "{pending} pending · {maint} maintenance · {paused} paused",
@@ -660,6 +669,12 @@ const en = {
     hint: "The uptime percentage you promise, between 0 and 100. Leave empty if this monitor has no target — its uptime is still reported, just without an error budget.",
     budgetPreview: "A {target}% target allows about {duration} of downtime per 30 days.",
   },
+  latency: {
+    label: "Latency threshold (ms)", placeholder: "e.g. 800",
+    hint: "Above this the monitor is marked degraded: still alive, but slower than promised. Uptime and SLA reports are unaffected. Leave empty to not judge its speed.",
+    badge: "Slow", threshold: "Threshold {ms} ms",
+    over: "{ms} ms, above the {threshold} ms threshold",
+  },
   incident: {
     updates: "Updates for users", addUpdate: "Post an update",
     noUpdates: "No updates published yet.",
@@ -675,6 +690,7 @@ const en = {
     pending: "Some systems are being checked",
     down: "Some systems are experiencing issues",
     maintenance: "Some systems are under scheduled maintenance",
+    degraded: "Some systems are running slower than usual",
     uptime30: "uptime over 30 days",
     noMonitors: "No monitors on this page yet.",
     incidents7d: "Incidents in the last 7 days",

@@ -34,6 +34,7 @@ const empty = {
   escalation_policy_id: "",
   // Target SLO dalam persen; "" = tanpa target
   slo_target: "",
+  latency_threshold_ms: "",
   // HTTP lanjutan
   auth_type: "none", auth_username: "", auth_password: "", auth_token: "",
   assertion_path: "", assertion_operator: "", assertion_value: "",
@@ -85,6 +86,7 @@ export default function MonitorForm() {
           parent_id: m.parent_id ?? "",
           escalation_policy_id: m.escalation_policy_id ?? "",
           slo_target: m.slo_target ?? "",
+          latency_threshold_ms: m.latency_threshold_ms ?? "",
           auth_type: m.auth_type || "none",
           auth_username: m.auth_username ?? "",
           // Password & token tidak pernah dikirim server; kosong = pertahankan yang tersimpan
@@ -243,14 +245,24 @@ export default function MonitorForm() {
         </div>
         <p className="text-xs text-muted -mt-2">{isPush ? t("form.pushHint") : t("form.retryHint")}</p>
 
-        <div>
-          <label className="label">{t("slo.label")}</label>
-          <input
-            className="input max-w-[12rem]" type="number" step="0.001" min="0" max="99.999"
-            value={form.slo_target} onChange={set("slo_target")} placeholder={t("slo.placeholder")}
-          />
-          <p className="text-xs text-muted mt-1.5">{t("slo.hint")}</p>
-          {sloBudget && <p className="text-xs text-accent mt-1">{sloBudget}</p>}
+        <div className="grid md:grid-cols-2 gap-4">
+          <div>
+            <label className="label">{t("slo.label")}</label>
+            <input
+              className="input max-w-[12rem]" type="number" step="0.001" min="0" max="99.999"
+              value={form.slo_target} onChange={set("slo_target")} placeholder={t("slo.placeholder")}
+            />
+            <p className="text-xs text-muted mt-1.5">{t("slo.hint")}</p>
+            {sloBudget && <p className="text-xs text-accent mt-1">{sloBudget}</p>}
+          </div>
+          <div>
+            <label className="label">{t("latency.label")}</label>
+            <input
+              className="input max-w-[12rem]" type="number" step="1" min="1" max="300000"
+              value={form.latency_threshold_ms} onChange={set("latency_threshold_ms")} placeholder={t("latency.placeholder")}
+            />
+            <p className="text-xs text-muted mt-1.5">{t("latency.hint")}</p>
+          </div>
         </div>
         {form.type === "http" && (
           <>

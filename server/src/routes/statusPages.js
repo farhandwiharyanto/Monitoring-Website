@@ -225,15 +225,21 @@ publicStatusRouter.get("/:slug", async (req, res) => {
   // check, pesan heartbeat, dan penyebab incident sengaja TIDAK disertakan.
   const monitors = decorated.map((d) => ({
     id: d.id, name: d.name, type: d.type, status: d.status, in_maintenance: d.in_maintenance,
+    // Cukup penandanya; ambang latency-nya sendiri tetap tidak dibuka ke publik
+    degraded: d.last_degraded,
     tags: d.tags,
     uptime_24h: d.uptime_24h, uptime_30d: d.uptime_30d,
     last_response_time: d.last_response_time, last_check: d.last_check,
     heartbeats: page.show_bars
-      ? d.heartbeats.map((h) => ({ status: h.status, maintenance: h.maintenance, response_time: h.response_time, created_at: h.created_at }))
+      ? d.heartbeats.map((h) => ({ status: h.status, maintenance: h.maintenance, degraded: h.degraded, response_time: h.response_time, created_at: h.created_at }))
       : [],
     incidents: incidents.filter((i) => i.monitor_id === d.id).map(({ monitor_id, ...i }) => i),
   }));
-  const overall = monitors.some((m) => m.status === 0) ? "down" : monitors.some((m) => m.status === 4) ? "maintenance" : monitors.some((m) => m.status === 2) ? "pending" : "up";
+  // Urutan keparahan: satu yang mati mengalahkan segalanya, lalu maintenance,
+  // lalu melambat — degraded ditaruh di atas pending karena artinya jelas bagi
+  // pembaca status page, sedangkan pending hanya keadaan sesaat saat retry.
+  const has = (code) => monitors.some((m) => m.status === code);
+  const overall = has(0) ? "down" : has(4) ? "maintenance" : has(5) ? "degraded" : has(2) ? "pending" : "up";
   res.json({
     page: {
       slug: page.slug, title: page.title, description: page.description,

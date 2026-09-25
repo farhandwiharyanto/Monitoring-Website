@@ -447,7 +447,18 @@ export default function MonitorDetail() {
       </div>
 
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
-        <StatCard label={t("detail.lastResponse")} value={fmtMs(monitor.last_response_time)} tone={monitor.status === 0 ? "text-down" : "text-accent"} />
+        <StatCard
+          label={t("detail.lastResponse")}
+          value={fmtMs(monitor.last_response_time)}
+          sub={
+            monitor.latency_threshold_ms
+              ? monitor.last_degraded
+                ? t("latency.over", { ms: monitor.last_response_time, threshold: monitor.latency_threshold_ms })
+                : t("latency.threshold", { ms: monitor.latency_threshold_ms })
+              : undefined
+          }
+          tone={monitor.status === 0 ? "text-down" : monitor.last_degraded ? "text-degraded" : "text-accent"}
+        />
         <StatCard label={t("detail.average", { range: rangeLabel })} value={fmtMs(avgMs)} sub={maxMs != null ? t("detail.max", { n: maxMs }) : ""} />
         <StatCard label={t("detail.uptime24")} value={fmtPct(monitor.uptime_24h)} tone={monitor.uptime_24h != null && monitor.uptime_24h < 99 ? "text-pending" : "text-up"} />
         <StatCard label={t("detail.uptime30")} value={fmtPct(monitor.uptime_30d)} tone={monitor.uptime_30d != null && monitor.uptime_30d < 99 ? "text-pending" : "text-up"} />

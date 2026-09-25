@@ -87,6 +87,11 @@ model Monitor {
   // uptime-nya tetap dilaporkan tapi tanpa error budget.
   slo_target            Float?
 
+  // Ambang waktu respons (ms). Di atas ini monitor dianggap "degraded": masih
+  // hidup, tapi lebih lambat dari yang dijanjikan. null = tidak dinilai.
+  // Status heartbeat-nya tetap UP, jadi uptime & SLA tidak ikut berubah.
+  latency_threshold_ms  Int?
+
   // Dependency antar-monitor: monitor induk (mis. router/gateway di depan
   // layanan ini). Selama induk down, alert & webhook aksi monitor ini ditahan
   // supaya satu gangguan di lapisan bawah tidak membanjiri notifikasi.
@@ -128,8 +133,11 @@ model Heartbeat {
   status        Int      // 0 down, 1 up, 2 pending
   message       String?
   response_time Int?
-  important     Boolean  @default(false) // true jika status berubah up<->down
+  important     Boolean  @default(false) // true jika status berubah up<->down atau masuk/keluar degraded
   maintenance   Boolean  @default(false) // dicatat saat monitor dalam maintenance window
+  // Respons melewati latency_threshold_ms monitor. Heartbeat-nya tetap UP:
+  // penanda ini soal kualitas, bukan ketersediaan.
+  degraded      Boolean  @default(false)
   // Lokasi agen yang melakukan check. null = baris lama dari sebelum
   // multi-location; diperlakukan sama dengan lokasi primary.
   location      String?

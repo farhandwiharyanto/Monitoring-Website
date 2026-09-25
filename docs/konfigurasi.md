@@ -32,6 +32,7 @@ Semua opsional kecuali yang ditandai. Daftar lengkap ada di `.env.example`.
 | `API_KEY_RATE_WINDOW_SECONDS` | `60` | Panjang jendela rate limit API key |
 | `ACTION_WEBHOOK_ATTEMPTS` | `3` | Percobaan pemanggilan webhook aksi (termasuk yang pertama) |
 | `ACTION_WEBHOOK_TIMEOUT_SECONDS` | `15` | Timeout tiap pemanggilan webhook aksi |
+| `LATENCY_RECOVERY_RATIO` | `0.9` | Histeresis keluar dari status degraded: pulih saat respons turun di bawah ambang × rasio ini |
 | `NOTIFICATION_LOG_RETENTION_DAYS` | `30` | Riwayat pengiriman notifikasi lebih tua dari ini dihapus tiap hari jam 03:00 |
 | `SCHEDULER_LEASE_SECONDS` | `30` | Masa berlaku lease pemimpin scheduler sejak perpanjangan terakhir |
 | `SCHEDULER_LEASE_RENEW_SECONDS` | `10` | Jarak antar perpanjangan lease |

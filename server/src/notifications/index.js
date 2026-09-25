@@ -263,6 +263,42 @@ export async function notifyEscalation(notification, { monitor, incident, level,
   }, { attempts: 3 });
 }
 
+// Alert kualitas: monitor masih hidup tapi melewati ambang latency-nya,
+// atau sudah kembali di bawahnya. Sengaja terpisah dari alert down/recover —
+// tidak ada incident yang terbuka dan tidak ada eskalasi, karena layanannya
+// tidak mati. Yang diberitahukan adalah janji kecepatan yang tidak dipenuhi.
+export async function notifyLatencyEvent(monitor, heartbeat, { degraded }) {
+  try {
+    const target = monitorTarget(monitor);
+    const threshold = monitor.latency_threshold_ms;
+    const ms = heartbeat.response_time;
+
+    const title = degraded
+      ? `🟠 [Pulsewatch] ${monitor.name} melambat (${ms} ms)`
+      : `✅ [Pulsewatch] ${monitor.name} kembali normal (${ms} ms)`;
+    let body =
+      `Monitor: ${monitor.name}\nTarget: ${target}\n` +
+      `Waktu respons: ${ms ?? "-"} ms\nAmbang: ${threshold} ms\n`;
+    body += degraded
+      ? "Layanan masih hidup, tapi lebih lambat dari yang dijanjikan.\n"
+      : "Waktu respons sudah kembali di bawah ambang.\n";
+    body += `${config.baseUrl}/monitors/${monitor.id}`;
+
+    await fanout(monitor.id, {
+      event: degraded ? "monitor.degraded" : "monitor.latency_ok",
+      title,
+      body,
+      // Warna aksen: degraded memakai nada yang sama dengan peringatan sertifikat
+      status: degraded ? "cert" : "up",
+      monitor: { id: monitor.id, name: monitor.name, type: monitor.type, target },
+      latency: { response_time: ms, threshold_ms: threshold, degraded },
+      heartbeat,
+    });
+  } catch (err) {
+    console.error("[notify:latency]", err);
+  }
+}
+
 // Peringatan sertifikat TLS yang hampir kedaluwarsa
 export async function notifyCertExpiry(monitor, cert) {
   try {

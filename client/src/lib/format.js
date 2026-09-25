@@ -1,6 +1,9 @@
 import { translate } from "./i18n.jsx";
 
-export const STATUS = { DOWN: 0, UP: 1, PENDING: 2, PAUSED: 3, MAINTENANCE: 4 };
+// Nilai 0-2 sama persis dengan status heartbeat di server; 3, 4, dan 5 hanya
+// ada untuk tampilan. Degraded berarti monitor UP tapi melewati ambang
+// latency-nya — uptime & SLA tetap menghitungnya sebagai up.
+export const STATUS = { DOWN: 0, UP: 1, PENDING: 2, PAUSED: 3, MAINTENANCE: 4, DEGRADED: 5 };
 
 // Bahasa aktif disimpan di modul agar fungsi format tetap bisa dipanggil
 // langsung (tanpa hook) dari komponen mana pun. I18nProvider yang menyetelnya.
@@ -17,6 +20,7 @@ export const statusMeta = {
   2: { key: "2", color: "text-pending", bg: "bg-pending", ring: "ring-pending/30", dot: "bg-pending" },
   3: { key: "3", color: "text-muted", bg: "bg-muted", ring: "ring-muted/30", dot: "bg-muted" },
   4: { key: "4", color: "text-maint", bg: "bg-maint", ring: "ring-maint/30", dot: "bg-maint" },
+  5: { key: "5", color: "text-degraded", bg: "bg-degraded", ring: "ring-degraded/30", dot: "bg-degraded" },
 };
 export const statusLabel = (status) => t(`status.${status in statusMeta ? status : 2}`);
 

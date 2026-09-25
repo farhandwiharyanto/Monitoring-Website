@@ -135,6 +135,20 @@ function cleanSloTarget(body, errors) {
   return Math.round(n * 10000) / 10000;
 }
 
+// Ambang latency (ms). Di atas ini monitor dianggap degraded — masih hidup,
+// tapi lebih lambat dari yang dijanjikan. Kosong berarti tidak dinilai.
+function cleanLatencyThreshold(body, errors) {
+  if (body.latency_threshold_ms === undefined) return undefined;
+  if (body.latency_threshold_ms === null || body.latency_threshold_ms === "") return null;
+  const n = Number(body.latency_threshold_ms);
+  if (!Number.isFinite(n)) { errors.push("Ambang latency harus berupa angka"); return null; }
+  if (n <= 0) { errors.push("Ambang latency harus lebih dari 0 ms"); return null; }
+  // Batas atas mengikuti timeout terpanjang yang bisa disetel (300 detik):
+  // ambang di atas timeout tidak akan pernah tercapai.
+  if (n > 300_000) { errors.push("Ambang latency maksimal 300000 ms"); return null; }
+  return Math.round(n);
+}
+
 // push_token adalah kredensial: hanya admin yang boleh melihatnya, dan selalu
 // dikirim bersama URL siap pakai supaya gampang disalin.
 function shape(monitor, user) {
@@ -176,6 +190,10 @@ function validate(body, existing = null) {
     slo_target: cleanSloTarget(body, errors),
     auth_type: AUTH_TYPES.includes(body.auth_type) ? body.auth_type : "none",
   };
+
+  // undefined = field tidak dikirim, biarkan nilai lama (penting untuk PUT parsial)
+  const latency = cleanLatencyThreshold(body, errors);
+  if (latency !== undefined) m.latency_threshold_ms = latency;
 
   // Header kustom, kredensial, dan assertion hanya relevan untuk HTTP
   if (m.type === "http") {

@@ -43,7 +43,14 @@ export default function MonitorRow({ m }) {
       </div>
       <HeartbeatBar beats={m.heartbeats} className="justify-self-end" />
       <div className="hidden lg:block text-right">
-        <p className={clsx("text-sm tabular-nums", m.status === 0 ? "text-down" : "text-fg2")}>{fmtMs(m.last_response_time)}</p>
+        {/* Waktu respons ikut berwarna saat melewati ambang: di daftar panjang,
+            itu isyarat tercepat bahwa layanan melambat tanpa perlu dibuka */}
+        <p
+          className={clsx("text-sm tabular-nums", m.status === 0 ? "text-down" : m.last_degraded ? "text-degraded" : "text-fg2")}
+          title={m.latency_threshold_ms ? t("latency.threshold", { ms: m.latency_threshold_ms }) : undefined}
+        >
+          {fmtMs(m.last_response_time)}
+        </p>
         <p className="text-[11px] text-muted">{m.last_check ? timeAgo(m.last_check) : t("monitors.notChecked")}</p>
       </div>
       <div className="hidden lg:block text-right">

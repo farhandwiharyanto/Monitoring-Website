@@ -24,6 +24,7 @@ export default {
         up: token("up"),
         down: token("down"),
         pending: token("pending"),
+        degraded: token("degraded"),
         maint: token("maint"),
       },
       fontFamily: {

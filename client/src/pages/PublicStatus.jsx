@@ -15,6 +15,7 @@ const overallMeta = {
   pending: { key: "public.pending", icon: AlertTriangle, cls: "border-pending/40 bg-pending/10 text-pending" },
   down: { key: "public.down", icon: XCircle, cls: "border-down/40 bg-down/10 text-down" },
   maintenance: { key: "public.maintenance", icon: Wrench, cls: "border-maint/40 bg-maint/10 text-maint" },
+  degraded: { key: "public.degraded", icon: AlertTriangle, cls: "border-degraded/40 bg-degraded/10 text-degraded" },
 };
 
 const announcementMeta = {
@@ -54,13 +55,17 @@ export default function PublicStatus({ slug: slugProp }) {
 
   useEffect(() => {
     const socket = getSocket();
-    const onBeat = ({ monitorId, status, maintenance, response_time, created_at }) => {
+    const onBeat = ({ monitorId, status, maintenance, degraded, response_time, created_at }) => {
       setData((d) => {
         if (!d || !d.monitors.some((m) => m.id === monitorId)) return d;
         const monitors = d.monitors.map((m) =>
-          m.id === monitorId ? { ...m, status, last_response_time: response_time, last_check: created_at, heartbeats: [...m.heartbeats.slice(-29), { status: maintenance ? m.heartbeats.at(-1)?.status ?? 1 : status, maintenance, response_time, created_at }] } : m
+          m.id === monitorId ? { ...m, status, degraded, last_response_time: response_time, last_check: created_at, heartbeats: [...m.heartbeats.slice(-29), { status: maintenance ? m.heartbeats.at(-1)?.status ?? 1 : status, maintenance, degraded, response_time, created_at }] } : m
         );
-        const overall = monitors.some((m) => m.status === 0) ? "down" : monitors.some((m) => m.status === 4) ? "maintenance" : monitors.some((m) => m.status === 2) ? "pending" : "up";
+        // Urutan keparahan harus sama dengan yang dihitung server di
+        // routes/statusPages.js, supaya banner tidak berubah arti saat halaman
+        // diperbarui lewat socket alih-alih dimuat ulang.
+        const has = (code) => monitors.some((m) => m.status === code);
+        const overall = has(0) ? "down" : has(4) ? "maintenance" : has(5) ? "degraded" : has(2) ? "pending" : "up";
         return { ...d, monitors, overall };
       });
     };

@@ -5,6 +5,7 @@ import { activeMaintenanceMap } from "./maintenance.js";
 import { decryptSecret } from "./crypto.js";
 import { dependencyInfo } from "./dependency.js";
 import { escalationStats } from "./escalation.js";
+import { DISPLAY_STATUS } from "./status.js";
 
 const HOUR = 3600_000;
 
@@ -41,7 +42,7 @@ async function lastBeatsMap(ids, limit) {
   const map = new Map(ids.map((id) => [id, []]));
   if (ids.length === 0) return map;
   const rows = await prisma.$queryRaw`
-    SELECT id, monitor_id, status, message, response_time, important, maintenance, location,
+    SELECT id, monitor_id, status, message, response_time, important, maintenance, location, degraded,
            assertion_ok, assertion_message, created_at FROM (
       SELECT h.*, row_number() OVER (PARTITION BY monitor_id ORDER BY created_at DESC, id DESC) AS rn
       FROM heartbeats h WHERE monitor_id IN (${Prisma.join(ids)}) ${PRIMARY_ONLY()}
@@ -56,7 +57,7 @@ export async function locationStatusMap(ids, { staleAfterSeconds = 600 } = {}) {
   const map = new Map(ids.map((id) => [id, []]));
   if (ids.length === 0) return map;
   const rows = await prisma.$queryRaw`
-    SELECT monitor_id, location, status, response_time, message, created_at FROM (
+    SELECT monitor_id, location, status, response_time, message, degraded, created_at FROM (
       SELECT h.*, row_number() OVER (
         PARTITION BY monitor_id, COALESCE(location, ${config.primaryLocation})
         ORDER BY created_at DESC, id DESC
@@ -72,6 +73,7 @@ export async function locationStatusMap(ids, { staleAfterSeconds = 600 } = {}) {
       location,
       is_primary: location === config.primaryLocation,
       status: r.status,
+      degraded: r.degraded,
       response_time: r.response_time,
       message: r.message,
       last_check: r.created_at,
@@ -112,8 +114,19 @@ export async function decorateMonitors(monitors, opts = {}) {
     const last = hb[hb.length - 1];
     const mw = maint.get(m.id);
     const { tags, notifications, auth_secret, ...rest } = m;
-    // status: 0 down, 1 up, 2 pending, 3 paused, 4 maintenance
-    const status = !m.active ? 3 : mw ? 4 : last ? last.status : 2;
+    // status: 0 down, 1 up, 2 pending, 3 paused, 4 maintenance, 5 degraded.
+    // Degraded hanya soal tampilan — heartbeat-nya tetap UP, jadi uptime dan
+    // laporan SLA tidak ikut berubah (lihat lib/status.js).
+    const degradedNow = !!last?.degraded && last.status === DISPLAY_STATUS.UP;
+    const status = !m.active
+      ? DISPLAY_STATUS.PAUSED
+      : mw
+        ? DISPLAY_STATUS.MAINTENANCE
+        : last
+          ? degradedNow
+            ? DISPLAY_STATUS.DEGRADED
+            : last.status
+          : DISPLAY_STATUS.PENDING;
 
     // Perbedaan antar lokasi: sebagian up, sebagian down → indikasi masalah
     // jaringan di salah satu lokasi, bukan service-nya yang mati.
@@ -133,6 +146,8 @@ export async function decorateMonitors(monitors, opts = {}) {
       maintenance_window: mw ? { id: mw.id, title: mw.title, end_at: mw.end_at, recurring: mw.recurring } : null,
       last_message: last?.message ?? null,
       last_response_time: last?.response_time ?? null,
+      // Melewati ambang latency pada pemeriksaan terakhir
+      last_degraded: degradedNow,
       last_check: last?.created_at ?? null,
       last_assertion_ok: last?.assertion_ok ?? null,
       last_assertion_message: last?.assertion_message ?? null,
@@ -180,7 +195,10 @@ export async function dashboardStats() {
   // Rantai eskalasi yang masih berjalan & yang sudah ada penanggungnya
   const escalations = await escalationStats();
   return {
+    // Hitungannya saling lepas: monitor degraded tidak ikut dihitung di `up`,
+    // supaya jumlah seluruh kartu tetap sama dengan `total`.
     total: monitors.length, up: count(1), down: count(0), pending: count(2), paused: count(3), maintenance: count(4),
+    degraded: count(5),
     avg_response_24h: avg ? Math.round(avg) : null,
     uptime_24h: uptime24 !== null ? Math.round(uptime24 * 100) / 100 : null,
     open_incidents: openIncidents,

@@ -49,7 +49,18 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
-        <StatCard label={t("dash.up")} value={stats?.up ?? "—"} sub={t("dash.ofMonitors", { n: stats?.total ?? 0 })} icon={ArrowUpCircle} tone="text-up" />
+        <StatCard
+          label={t("dash.up")}
+          value={stats?.up ?? "—"}
+          // Monitor degraded tidak ikut dihitung di angka `up`, jadi jumlahnya
+          // disebut di sini supaya seluruh kartu tetap menjumlah ke total
+          sub={
+            t("dash.ofMonitors", { n: stats?.total ?? 0 }) +
+            (stats?.degraded ? ` · ${t("dash.degradedSub", { n: stats.degraded })}` : "")
+          }
+          icon={ArrowUpCircle}
+          tone="text-up"
+        />
         <StatCard
           label={t("dash.down")}
           value={stats?.down ?? "—"}
