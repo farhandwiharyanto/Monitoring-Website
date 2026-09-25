@@ -90,13 +90,33 @@ datanya. Itu pernah terjadi sekali saat Phase 9 dikerjakan.
    kelak direplikasi. Berlaku juga untuk rate limit endpoint ack. (Duplikasi
    *check* saat direplikasi sudah tidak jadi masalah sejak lease scheduler,
    tapi rate limit tetap hidup sendiri-sendiri di tiap proses.)
-6. **Kontak on-call hanya bisa disetel admin.** Konfigurasi notifikasi berisi
+5. **Kontak on-call hanya bisa disetel admin.** Konfigurasi notifikasi berisi
    kredensial sehingga router-nya admin-only, jadi viewer yang ikut piket tidak
    bisa mengatur kontaknya sendiri. Kalau nanti perlu, jalannya adalah endpoint
    swalayan yang hanya mengembalikan id/nama/tipe notifikasi, bukan config-nya.
-7. **Eskalasi berhenti setelah tingkat terakhir dikirim** (`exhausted`), tidak
+6. **Eskalasi berhenti setelah tingkat terakhir dikirim** (`exhausted`), tidak
    ada pengulangan rantai. Kalau seluruh tingkat lewat tanpa ada yang menangani,
    tidak ada lagi yang mengingatkan.
+
+## Yang perlu dilakukan di instance yang sedang berjalan
+
+Container produksi yang dibangun sebelum Phase 8 **tidak otomatis ikut berubah**
+saat repo diperbarui. Untuk membawa seluruh pekerjaan Phase 8-9 ke sana:
+
+```bash
+docker compose up -d --build
+```
+
+Migration dijalankan otomatis saat start dan semuanya bersifat menambah kolom
+atau tabel — tidak ada yang menghapus data. Memeriksa apakah instance sudah
+memakai kode terbaru:
+
+```bash
+docker exec pulsewatch grep -o 'MONITOR_TYPES = \[[^]]*\]' src/checks/index.js
+```
+
+Kalau hasilnya hanya lima tipe (`http, tcp, ping, dns, push`), image-nya masih
+yang lama dan tipe monitor baru belum akan muncul di UI.
 
 ## Cara menjalankan untuk diuji
 
