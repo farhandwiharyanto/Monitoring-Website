@@ -14,6 +14,8 @@ export function setFormatLang(next) {
 const t = (key, vars) => translate(lang, key, vars);
 const locale = () => (lang === "en" ? "en-GB" : "id-ID");
 
+const DB_TARGET_TYPES = new Set(["postgres", "mysql", "redis"]);
+
 export const statusMeta = {
   0: { key: "0", color: "text-down", bg: "bg-down", ring: "ring-down/30", dot: "bg-down" },
   1: { key: "1", color: "text-up", bg: "bg-up", ring: "ring-up/30", dot: "bg-up" },
@@ -69,6 +71,13 @@ export function monitorTarget(m) {
   // Monitor push tidak punya target keluar; URL push-nya rahasia dan hanya
   // ditampilkan di kartu khusus pada halaman detail.
   if (m.type === "push") return t("form.typePushDesc");
+  // Daftar broker Kafka bukan rahasia dan memang perlu terlihat
+  if (m.type === "kafka") return m.check_config?.kafka_brokers || "—";
+  // Monitor database menyimpan targetnya di dalam connection string, yang
+  // terenkripsi dan tidak pernah dikirim ke browser. Tanpa cabang ini, barisnya
+  // jatuh ke m.hostname yang memang selalu kosong untuk tipe ini dan tampil
+  // sebagai target kosong.
+  if (DB_TARGET_TYPES.has(m.type)) return t("form.connStored");
   return m.port ? `${m.hostname}:${m.port}` : m.hostname;
 }
 // Untuk <input type="datetime-local">: nilai lokal tanpa zona
