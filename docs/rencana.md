@@ -5,7 +5,7 @@ menjalankannya untuk diuji. Ditulis untuk sesi kerja berikutnya.
 
 [← Kembali ke README](../README.md)
 
-Terakhir diperbarui: 26 September 2026 · commit `1e1d1f8`
+Terakhir diperbarui: 26 September 2026 · commit `32d6994`
 
 ## Sudah selesai
 
@@ -21,7 +21,7 @@ Terakhir diperbarui: 26 September 2026 · commit `1e1d1f8`
 | 8 (fondasi) | Lease scheduler, health cek DB, shutdown rapi, riwayat pengiriman notifikasi, tes unit & CI | `27e5581` `b6355fa` `40f36b2` |
 | 8 (fitur) | Status degraded & ambang latency per monitor | `76ede23` |
 | 8 (fitur) | Pengingat "masih down", feed Atom status page, ringkasan harian & p95 | `1e1d1f8` |
-| 9 | Monitor database (PostgreSQL/MySQL/Redis), gRPC, dan Kafka | `4a2692a` `88b4c4e` |
+| 9 | Monitor database (PostgreSQL/MySQL/Redis), gRPC, dan Kafka | `4a2692a` `88b4c4e` `32d6994` |
 
 Polanya: tiap phase jadi dua commit — server dulu, lalu klien & dokumentasi.
 
