@@ -37,6 +37,23 @@ curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/jso
   https://pulsewatch.contoh.com/api/incidents/12/updates
 ```
 
+## Berlangganan lewat feed
+
+Tiap status page yang menampilkan incident menyediakan feed Atom:
+
+```
+/api/public/status/<slug>/feed.xml
+```
+
+Tautannya juga dipasang di `<head>` halaman, sehingga pembaca feed dan browser
+menemukannya sendiri dari alamat halaman biasa, dan muncul sebagai tautan di
+kaki halaman. Isinya incident 90 hari terakhir (maksimal 50) beserta kabar yang
+ditulis admin selama gangguan berlangsung; maintenance tidak ikut.
+
+Halaman yang menyembunyikan incident tidak menyediakan feed. Id tiap entri tidak
+berubah saat incident ditutup, jadi pelanggan tidak mendapat notifikasi kedua
+untuk gangguan yang sama.
+
 ## Custom domain untuk status page
 
 Isi field *Custom domain* pada status page, lalu arahkan domain itu ke Pulsewatch. Saat

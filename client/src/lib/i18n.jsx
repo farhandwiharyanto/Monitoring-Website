@@ -46,6 +46,7 @@ const id = {
     last24h: "24 jam", last30d: "30 hari", allTags: "Semua tag",
   },
   detail: {
+    p95: "p95 {ms} ms (24 jam)",
     checkEvery: "Cek tiap {interval}s · retries {retries} · timeout {timeout}s · terakhir {last}",
     pushExpect: "Menunggu push tiap {interval}s · toleransi {grace}s · terakhir {last}",
     pause: "Pause", resume: "Resume",
@@ -328,6 +329,11 @@ const id = {
     badge: "Melambat", threshold: "Ambang {ms} ms",
     over: "{ms} ms, di atas ambang {threshold} ms",
   },
+  renotify: {
+    label: "Ingatkan lagi tiap (menit)", placeholder: "mis. 30",
+    hint: "Selama monitor masih down, kabar diulang ke channel yang sama tiap sekian menit — supaya gangguan panjang tidak terlupakan setelah pesan pertamanya tenggelam. Berhenti saat monitor pulih atau eskalasinya sudah ditangani. Kosongkan untuk mengabari sekali saja.",
+    every: "Diingatkan tiap {n} menit",
+  },
   incident: {
     updates: "Kabar untuk pengguna", addUpdate: "Tulis kabar",
     noUpdates: "Belum ada kabar yang dipublikasikan.",
@@ -344,6 +350,7 @@ const id = {
     down: "Sebagian sistem mengalami gangguan",
     maintenance: "Sebagian sistem dalam maintenance terjadwal",
     degraded: "Sebagian sistem berjalan lebih lambat dari biasanya",
+    subscribe: "Berlangganan kabar gangguan (Atom)",
     uptime30: "uptime 30 hari",
     noMonitors: "Belum ada monitor pada halaman ini.",
     incidents7d: "Incident 7 hari terakhir",
@@ -393,6 +400,7 @@ const en = {
     last24h: "24 hours", last30d: "30 days", allTags: "All tags",
   },
   detail: {
+    p95: "p95 {ms} ms (24h)",
     checkEvery: "Every {interval}s · {retries} retries · {timeout}s timeout · last {last}",
     pushExpect: "Expects a push every {interval}s · {grace}s grace · last {last}",
     pause: "Pause", resume: "Resume",
@@ -675,6 +683,11 @@ const en = {
     badge: "Slow", threshold: "Threshold {ms} ms",
     over: "{ms} ms, above the {threshold} ms threshold",
   },
+  renotify: {
+    label: "Remind again every (minutes)", placeholder: "e.g. 30",
+    hint: "While the monitor is still down, the same channels are reminded every few minutes — so a long outage is not forgotten once the first message scrolls away. Stops when the monitor recovers or its escalation is acknowledged. Leave empty to notify once.",
+    every: "Reminded every {n} minutes",
+  },
   incident: {
     updates: "Updates for users", addUpdate: "Post an update",
     noUpdates: "No updates published yet.",
@@ -691,6 +704,7 @@ const en = {
     down: "Some systems are experiencing issues",
     maintenance: "Some systems are under scheduled maintenance",
     degraded: "Some systems are running slower than usual",
+    subscribe: "Subscribe to incident updates (Atom)",
     uptime30: "uptime over 30 days",
     noMonitors: "No monitors on this page yet.",
     incidents7d: "Incidents in the last 7 days",

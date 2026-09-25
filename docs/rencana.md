@@ -20,6 +20,7 @@ Terakhir diperbarui: 26 September 2026 · commit `40f36b2`
 | 7 | Jadwal on-call, escalation policy berjenjang, acknowledge | `9ab321d` `ea1601e` |
 | 8 (fondasi) | Lease scheduler, health cek DB, shutdown rapi, riwayat pengiriman notifikasi, tes unit & CI | `27e5581` `b6355fa` `40f36b2` |
 | 8 (fitur) | Status degraded & ambang latency per monitor | `76ede23` |
+| 8 (fitur) | Pengingat "masih down", feed Atom status page, ringkasan harian & p95 | — |
 
 Polanya: tiap phase jadi dua commit — server dulu, lalu klien & dokumentasi.
 
@@ -42,15 +43,10 @@ riwayat pengiriman notifikasi yang menjaganya.
 
 ### Fitur berikutnya
 
-- **Ulangi alert selama masih down.** Sekali kirim lalu senyap sampai pulih.
-  Sekaligus menambal utang teknis no. 7 di bawah.
-- **Feed RSS/Atom incident di status page.** Pengguna belum bisa berlangganan
-  kabar gangguan sama sekali. Murah dan tanpa dependency.
-- **Rollup harian + p95.** Heartbeat dipangkas 90 hari sehingga grafik latency
-  lama hilang (laporan SLA aman karena dihitung dari incident, bukan heartbeat).
-  Tabel agregat yang diisi sebelum prune memberi grafik setahun dengan biaya
-  kecil. Sekalian ganti `AVG` di `stats.js` dengan p95 — rata-rata menyembunyikan
-  ekor.
+- **Grafik dari ringkasan harian.** Tabel `heartbeat_daily` dan endpoint
+  `/api/monitors/:id/daily` sudah ada dan terisi, tapi belum ada grafik yang
+  memakainya — halaman detail masih menggambar dari heartbeat mentah, jadi
+  rentangnya tetap terbatas pada retensi heartbeat.
 - **2FA (TOTP).** Aplikasi ini memegang kredensial monitor terenkripsi dan URL
   webhook, tapi login hanya password + rate limit.
 

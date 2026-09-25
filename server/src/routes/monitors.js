@@ -13,6 +13,8 @@ import { upsertTags } from "./tags.js";
 import { wouldCycle, chainDepth, MAX_DEPTH } from "../lib/dependency.js";
 import { recordAudit, diffFields, snapshotFields } from "../lib/audit.js";
 import { stopEscalation } from "../lib/escalation.js";
+import { cleanRenotifyMinutes } from "../lib/renotify.js";
+import { dailySeries } from "../lib/rollup.js";
 
 export const monitorsRouter = Router();
 monitorsRouter.use(requireAuth);
@@ -194,6 +196,15 @@ function validate(body, existing = null) {
   // undefined = field tidak dikirim, biarkan nilai lama (penting untuk PUT parsial)
   const latency = cleanLatencyThreshold(body, errors);
   if (latency !== undefined) m.latency_threshold_ms = latency;
+
+  const renotify = cleanRenotifyMinutes(body.renotify_minutes);
+  if (renotify !== undefined) {
+    if (renotify && renotify.error) errors.push(renotify.error);
+    else m.renotify_minutes = renotify;
+  } else if (!existing) {
+    // Hanya saat monitor dibuat; pada edit, field yang tidak dikirim dibiarkan
+    m.renotify_minutes = config.renotifyDefaultMinutes;
+  }
 
   // Header kustom, kredensial, dan assertion hanya relevan untuk HTTP
   if (m.type === "http") {
@@ -453,6 +464,13 @@ monitorsRouter.delete("/:id", requireAdmin, async (req, res) => {
 // Heartbeat history untuk grafik: ?hours=24
 // ?hours=24 &location=<nama|all>. Tanpa parameter lokasi, dipakai lokasi primary
 // supaya grafik tetap sama seperti sebelum multi-location ada.
+// Ringkasan harian untuk grafik jangka panjang. Sumbernya tabel rollup, bukan
+// heartbeat, sehingga rentangnya tidak terbatas pada retensi heartbeat.
+monitorsRouter.get("/:id/daily", async (req, res) => {
+  const days = Math.min(730, Math.max(1, Number(req.query.days) || 90));
+  res.json(await dailySeries(req.params.id, { days }));
+});
+
 monitorsRouter.get("/:id/heartbeats", async (req, res) => {
   const hours = Math.min(24 * 30, Math.max(1, Number(req.query.hours) || 24));
   const requested = req.query.location ? String(req.query.location) : null;
@@ -467,7 +485,7 @@ monitorsRouter.get("/:id/heartbeats", async (req, res) => {
     orderBy: { created_at: "asc" },
     select: {
       id: true, status: true, message: true, response_time: true, important: true,
-      maintenance: true, location: true, assertion_ok: true, assertion_message: true, created_at: true,
+      maintenance: true, degraded: true, location: true, assertion_ok: true, assertion_message: true, created_at: true,
     },
   });
   res.json(rows);

@@ -35,6 +35,7 @@ const empty = {
   // Target SLO dalam persen; "" = tanpa target
   slo_target: "",
   latency_threshold_ms: "",
+  renotify_minutes: "",
   // HTTP lanjutan
   auth_type: "none", auth_username: "", auth_password: "", auth_token: "",
   assertion_path: "", assertion_operator: "", assertion_value: "",
@@ -87,6 +88,7 @@ export default function MonitorForm() {
           escalation_policy_id: m.escalation_policy_id ?? "",
           slo_target: m.slo_target ?? "",
           latency_threshold_ms: m.latency_threshold_ms ?? "",
+          renotify_minutes: m.renotify_minutes ?? "",
           auth_type: m.auth_type || "none",
           auth_username: m.auth_username ?? "",
           // Password & token tidak pernah dikirim server; kosong = pertahankan yang tersimpan
@@ -263,6 +265,15 @@ export default function MonitorForm() {
             />
             <p className="text-xs text-muted mt-1.5">{t("latency.hint")}</p>
           </div>
+        </div>
+
+        <div>
+          <label className="label">{t("renotify.label")}</label>
+          <input
+            className="input max-w-[12rem]" type="number" step="1" min="1" max="1440"
+            value={form.renotify_minutes} onChange={set("renotify_minutes")} placeholder={t("renotify.placeholder")}
+          />
+          <p className="text-xs text-muted mt-1.5">{t("renotify.hint")}</p>
         </div>
         {form.type === "http" && (
           <>

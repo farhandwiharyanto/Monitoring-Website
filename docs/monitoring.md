@@ -143,6 +143,48 @@ Di Prometheus: `pulsewatch_monitor_degraded` dan
 monitor degraded, jadi alert ketersediaan yang sudah terpasang tidak ikut
 berbunyi hanya karena sebuah layanan melambat.
 
+## Pengingat selama masih down
+
+Isi `renotify_minutes` pada sebuah monitor dan kabar "masih down" diulang ke
+channel yang sama tiap sekian menit selama gangguan berlangsung. Tanpa itu,
+gangguan jam dua pagi menghasilkan satu pesan lalu senyap sampai pulih — pesan
+itu tenggelam dan tidak ada apa pun yang mengingatkan lagi.
+
+Berbeda dari eskalasi: eskalasi memanggil **orang lain** secara berjenjang lalu
+berhenti di tingkat terakhir. Pengingat hanya mengulang kabar ke penerima yang
+sama. Keduanya bisa dipakai bersamaan.
+
+Pengingat berhenti sendiri saat monitor pulih, dan langsung berhenti bila rantai
+eskalasi incident itu sudah di-acknowledge — tandanya sudah ada yang menangani.
+Maintenance window yang baru dimulai dan induk yang ikut down menahan pengingat
+tanpa menggeser jadwalnya: begitu penahannya hilang, pengingat menyusul.
+
+Jadwalnya disimpan di tabel incident (`last_notified_at`, `renotify_count`),
+bukan di timer dalam memori, jadi proses yang mati dan digantikan tidak
+kehilangan jadwal pengingatnya.
+
+## Ringkasan harian & p95
+
+Heartbeat dibuang setelah `HEARTBEAT_RETENTION_DAYS` (bawaan 90 hari), jadi
+grafik waktu respons yang lebih tua ikut hilang. Laporan SLA tidak terpengaruh
+karena dihitung dari tabel incident, bukan dari heartbeat — yang hilang hanya
+riwayat kecepatan.
+
+Tabel `heartbeat_daily` menyimpan ringkasannya: jumlah up/down/degraded, serta
+min, rata-rata, **p95**, dan maks waktu respons per monitor per hari per lokasi.
+Diisi tiap jam untuk hari berjalan, dan sekali lagi jam 03:00 **sebelum**
+pemangkasan — urutan itu yang membuat grafiknya tidak berlubang. Instance yang
+baru dimutakhirkan mengisi seluruh riwayatnya sekali saat start.
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" "$BASE/api/monitors/3/daily?days=365"
+```
+
+p95 disimpan berdampingan dengan rata-rata, bukan menggantikannya: layanan
+dengan rata-rata 200 ms tapi p95 3 detik terasa lambat bagi sebagian pengguna,
+dan rata-rata sendiri tidak pernah memperlihatkannya. Angka p95 24 jam juga
+ikut di `GET /api/monitors` sebagai `p95_response_24h`.
+
 ## Riwayat pengiriman notifikasi
 
 Setiap pengiriman dicatat — berhasil maupun gagal — beserta jumlah percobaan,

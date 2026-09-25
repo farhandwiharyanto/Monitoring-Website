@@ -263,6 +263,34 @@ export async function notifyEscalation(notification, { monitor, incident, level,
   }, { attempts: 3 });
 }
 
+// Pengingat bahwa monitor masih down. Bukan alert baru: tidak membuka incident,
+// tidak memulai eskalasi, dan isinya menekankan sudah berapa lama gangguannya
+// berjalan — itu yang berubah sejak pesan sebelumnya.
+export async function notifyStillDown(monitor, incident, { reminder }) {
+  try {
+    const target = monitorTarget(monitor);
+    const downSeconds = Math.round((Date.now() - new Date(incident.started_at).getTime()) / 1000);
+    const title = `🔴 [Pulsewatch] ${monitor.name} MASIH down (${formatDuration(downSeconds)})`;
+    const body =
+      `Monitor: ${monitor.name}\nTarget: ${target}\n` +
+      `Penyebab: ${incident.cause || "-"}\n` +
+      `Sudah down: ${formatDuration(downSeconds)}\n` +
+      `Pengingat ke-${reminder}, tiap ${monitor.renotify_minutes} menit\n` +
+      `${config.baseUrl}/monitors/${monitor.id}`;
+
+    await fanout(monitor.id, {
+      event: "monitor.still_down",
+      title,
+      body,
+      status: "down",
+      monitor: { id: monitor.id, name: monitor.name, type: monitor.type, target },
+      incident: { id: incident.id, started_at: incident.started_at, down_seconds: downSeconds, reminder },
+    });
+  } catch (err) {
+    console.error("[notify:still_down]", err);
+  }
+}
+
 // Alert kualitas: monitor masih hidup tapi melewati ambang latency-nya,
 // atau sudah kembali di bawahnya. Sengaja terpisah dari alert down/recover —
 // tidak ada incident yang terbuka dan tidak ada eskalasi, karena layanannya

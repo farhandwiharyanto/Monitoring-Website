@@ -455,7 +455,9 @@ export default function MonitorDetail() {
               ? monitor.last_degraded
                 ? t("latency.over", { ms: monitor.last_response_time, threshold: monitor.latency_threshold_ms })
                 : t("latency.threshold", { ms: monitor.latency_threshold_ms })
-              : undefined
+              : monitor.p95_response_24h
+                ? t("detail.p95", { ms: monitor.p95_response_24h })
+                : undefined
           }
           tone={monitor.status === 0 ? "text-down" : monitor.last_degraded ? "text-degraded" : "text-accent"}
         />

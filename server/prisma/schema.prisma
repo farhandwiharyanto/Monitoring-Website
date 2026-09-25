@@ -92,6 +92,12 @@ model Monitor {
   // Status heartbeat-nya tetap UP, jadi uptime & SLA tidak ikut berubah.
   latency_threshold_ms  Int?
 
+  // Jeda pengingat selama monitor masih down (menit). null = tidak mengingatkan.
+  // Berbeda dari eskalasi: eskalasi memanggil orang lain secara berjenjang,
+  // ini hanya mengulang kabar ke channel yang sama supaya gangguan panjang
+  // tidak terlupakan setelah pesan pertamanya tenggelam.
+  renotify_minutes      Int?
+
   // Dependency antar-monitor: monitor induk (mis. router/gateway di depan
   // layanan ini). Selama induk down, alert & webhook aksi monitor ini ditahan
   // supaya satu gangguan di lapisan bawah tidak membanjiri notifikasi.
@@ -161,6 +167,10 @@ model Incident {
   cause       String?
   maintenance Boolean   @default(false) // down terjadi saat maintenance
   notified    Boolean   @default(false) // alert "down" sudah terkirim
+  // Kabar terakhir soal incident ini (alert pertama maupun pengingat), dan
+  // sudah berapa kali diingatkan. Dasar perhitungan pengingat berikutnya.
+  last_notified_at DateTime?
+  renotify_count   Int      @default(0)
   // Alert ditahan karena monitor induk sedang down. Tetap dicatat sebagai
   // incident supaya riwayat & uptime tidak berubah, hanya alert-nya yang diam.
   suppressed       Boolean @default(false)
@@ -172,6 +182,7 @@ model Incident {
   escalation Escalation?
 
   @@index([monitor_id, started_at(sort: Desc)])
+  @@index([resolved_at, last_notified_at])
   @@map("incidents")
 }
 
@@ -579,6 +590,32 @@ model NotificationLog {
   @@index([notification_id, created_at(sort: Desc)])
   @@index([ok, created_at(sort: Desc)])
   @@map("notification_logs")
+}
+
+// Ringkasan harian heartbeat, diisi sebelum heartbeat lama dipangkas.
+// Tanpa ini, grafik waktu respons ikut hilang bersama heartbeat-nya setelah
+// HEARTBEAT_RETENTION_DAYS. Laporan SLA tidak terpengaruh karena dihitung dari
+// tabel incident.
+//
+// p95 disimpan berdampingan dengan rata-rata: rata-rata menyembunyikan ekor,
+// dan justru ekor itulah yang dirasakan pengguna.
+model HeartbeatDaily {
+  monitor_id  Int
+  day         DateTime @db.Date
+  location    String
+  up          Int      @default(0)
+  down        Int      @default(0)
+  degraded    Int      @default(0)
+  maintenance Int      @default(0)
+  min_ms      Int?
+  avg_ms      Int?
+  p95_ms      Int?
+  max_ms      Int?
+  updated_at  DateTime @default(now())
+
+  @@id([monitor_id, day, location])
+  @@index([monitor_id, day(sort: Desc)])
+  @@map("heartbeat_daily")
 }
 
 // --- Phase 8: lease scheduler ---

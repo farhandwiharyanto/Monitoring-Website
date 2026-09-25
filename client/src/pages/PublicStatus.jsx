@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import { Activity, CheckCircle2, AlertTriangle, XCircle, Wrench, Info, Megaphone } from "lucide-react";
+import { Activity, CheckCircle2, AlertTriangle, XCircle, Wrench, Info, Megaphone, Rss } from "lucide-react";
 import clsx from "clsx";
 import { api } from "../lib/api.js";
 import { getSocket } from "../lib/socket.js";
@@ -52,6 +52,19 @@ export default function PublicStatus({ slug: slugProp }) {
     if (rgb) document.documentElement.style.setProperty("--c-accent", rgb);
     return () => document.documentElement.style.removeProperty("--c-accent");
   }, [data?.page?.theme, data?.page?.accent_color]);
+
+  // Tautan feed di <head> supaya pembaca feed dan browser menemukannya sendiri
+  // dari alamat halaman, tanpa pengguna perlu tahu pola URL-nya.
+  useEffect(() => {
+    if (!data?.page || !data.page.show_incidents) return;
+    const link = document.createElement("link");
+    link.rel = "alternate";
+    link.type = "application/atom+xml";
+    link.title = data.page.title;
+    link.href = `/api/public/status/${data.page.slug}/feed.xml`;
+    document.head.appendChild(link);
+    return () => link.remove();
+  }, [data?.page?.slug, data?.page?.show_incidents, data?.page?.title]);
 
   useEffect(() => {
     const socket = getSocket();
@@ -180,6 +193,18 @@ export default function PublicStatus({ slug: slugProp }) {
 
         <footer className="text-center text-xs text-muted pt-6 space-y-1">
           {page.footer_text && <p className="text-fg3">{page.footer_text}</p>}
+          {page.show_incidents && (
+            <p>
+              <a
+                className="inline-flex items-center gap-1.5 hover:text-accent transition-colors"
+                href={`/api/public/status/${page.slug}/feed.xml`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <Rss size={12} /> {t("public.subscribe")}
+              </a>
+            </p>
+          )}
           <p>{t("public.poweredBy")}</p>
         </footer>
       </div>

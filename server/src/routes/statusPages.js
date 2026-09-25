@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { prisma } from "../db.js";
+import { atomFeed } from "../lib/feed.js";
 import { requireAuth, requireAdmin } from "../lib/auth.js";
 import { decorateMonitors, monitorInclude } from "../lib/stats.js";
 import { config } from "../config.js";
@@ -181,6 +182,47 @@ publicStatusRouter.get("/resolve", async (req, res) => {
   if (!host) return res.json({ slug: null });
   const page = await prisma.statusPage.findFirst({ where: { custom_domain: host, published: true }, select: { slug: true } });
   res.json({ slug: page ? page.slug : null });
+});
+
+// Feed Atom: dipasang SEBELUM "/:slug" karena Express memilih route sesuai
+// urutan, dan "/:slug" akan ikut menangkap "uji/feed.xml" kalau didahulukan.
+publicStatusRouter.get("/:slug/feed.xml", async (req, res) => {
+  const page = await prisma.statusPage.findFirst({
+    where: { slug: req.params.slug, published: true },
+    include: {
+      monitors: { include: { monitor: { select: { id: true, name: true } } } },
+      tags: { include: { tag: true } },
+    },
+  });
+  if (!page) return res.status(404).type("text/plain").send("Status page tidak ditemukan");
+  // Halaman yang menyembunyikan incident juga tidak menyiarkannya lewat feed
+  if (!page.show_incidents) return res.status(404).type("text/plain").send("Feed tidak tersedia untuk halaman ini");
+
+  const names = new Map(page.monitors.map((x) => [x.monitor.id, x.monitor.name]));
+  const tagIds = page.tags.map((t) => t.tag_id);
+  if (tagIds.length) {
+    const byTag = await prisma.monitor.findMany({
+      where: { tags: { some: { tag_id: { in: tagIds } } } },
+      select: { id: true, name: true },
+    });
+    for (const m of byTag) if (!names.has(m.id)) names.set(m.id, m.name);
+  }
+
+  // Jendela 90 hari: cukup panjang untuk pembaca feed yang lama tidak dibuka,
+  // cukup pendek supaya tidak mengirim seluruh riwayat tiap kali di-poll.
+  const since = new Date(Date.now() - 90 * 86400_000);
+  const incidents = names.size
+    ? await prisma.incident.findMany({
+        where: { monitor_id: { in: [...names.keys()] }, started_at: { gte: since }, maintenance: false },
+        orderBy: { started_at: "desc" },
+        take: 50,
+        include: { updates: { orderBy: { created_at: "desc" } } },
+      })
+    : [];
+
+  res.type("application/atom+xml; charset=utf-8");
+  res.set("Cache-Control", "public, max-age=300");
+  res.send(atomFeed({ page, incidents, monitorNames: names }));
 });
 
 publicStatusRouter.get("/:slug", async (req, res) => {

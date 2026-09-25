@@ -90,6 +90,11 @@ export const config = {
   // Target SLO bawaan untuk monitor baru (persen). Kosong = tanpa target.
   sloDefaultTarget: process.env.SLO_DEFAULT_TARGET ? Number(process.env.SLO_DEFAULT_TARGET) : null,
 
+  // Jeda pengingat bawaan untuk monitor baru (menit). Kosong = tidak mengingatkan.
+  renotifyDefaultMinutes: process.env.RENOTIFY_DEFAULT_MINUTES ? Number(process.env.RENOTIFY_DEFAULT_MINUTES) : null,
+  // Seberapa sering penyapu mencari incident yang sudah waktunya diingatkan (detik)
+  renotifySweepSeconds: Number(process.env.RENOTIFY_SWEEP_SECONDS || 30),
+
   // Histeresis keluar dari status degraded: monitor baru dianggap pulih saat
   // responsnya turun di bawah ambang dikali rasio ini. Tanpa itu, layanan yang
   // bertahan tepat di ambang akan mengirim alert bolak-balik tiap interval.

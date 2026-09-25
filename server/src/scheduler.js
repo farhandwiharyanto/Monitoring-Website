@@ -11,6 +11,8 @@ import { isInMaintenance } from "./lib/maintenance.js";
 import { blockingAncestor } from "./lib/dependency.js";
 import { startEscalation, stopEscalation, runDueDeliveries } from "./lib/escalation.js";
 import { isLeading, startLeaseLoop, releaseLease } from "./lib/leader.js";
+import { runDueRenotifications } from "./lib/renotify.js";
+import { rollupDaily, backfillDaily } from "./lib/rollup.js";
 
 // State in-memory per monitor: kapan check berikutnya, retry count, sedang jalan atau tidak
 const state = new Map(); // id -> { nextRun, retries, running, nextCertCheck }
@@ -43,17 +45,44 @@ export async function initScheduler(socketIo) {
       })
     );
   }
+  // Pengingat "masih down": dicari dari tabel incident, bukan dari timer di
+  // memori, supaya proses yang berganti tidak kehilangan jadwalnya.
+  if (isPrimaryLocation()) {
+    tasks.push(
+      cron.schedule(`*/${Math.max(5, Math.min(59, config.renotifySweepSeconds))} * * * * *`, () => {
+        if (!active()) return;
+        runDueRenotifications().catch((e) => console.error("[renotify]", e));
+      })
+    );
+  }
   // Bersihkan heartbeat & audit log lama setiap hari jam 03:00.
   // Cukup dikerjakan pemimpin: dua proses yang menghapus baris yang sama
   // hanya saling menunggu kunci baris tanpa menambah manfaat.
   tasks.push(
-    cron.schedule("0 3 * * *", () => {
+    cron.schedule("0 3 * * *", async () => {
       if (!active()) return;
+      // Ringkas DULU, baru pangkas: hari-hari yang barisnya akan dibuang harus
+      // sudah punya ringkasannya, kalau tidak grafiknya berlubang selamanya.
+      await rollupDaily({ days: 3 }).catch(console.error);
       pruneOldHeartbeats().catch(console.error);
       pruneOldAuditLogs().catch(console.error);
       pruneOldNotificationLogs().catch(console.error);
     })
   );
+
+  // Ringkasan hari berjalan diperbarui tiap jam supaya grafik hari ini ikut
+  // hidup, bukan baru muncul besok pagi.
+  tasks.push(
+    cron.schedule("7 * * * *", () => {
+      if (!active()) return;
+      rollupDaily({ days: 2 }).catch(console.error);
+    })
+  );
+
+  // Instance yang baru dimutakhirkan belum punya ringkasan sama sekali; isi
+  // sekali di latar belakang supaya grafiknya tidak kosong sampai besok.
+  if (isLeading()) backfillDaily().catch((e) => console.error("[rollup] backfill:", e.message));
+
   console.log("[scheduler] berjalan");
 }
 
@@ -250,7 +279,12 @@ export async function applyResult(monitor, { status, message, ms, assertion }, o
     // tapi masih down, atau saat induk sudah pulih sementara monitor ini tetap
     // down — berarti masalahnya memang miliknya sendiri.
     if (!inMaint && !blocker && !incident.notified) {
-      await prisma.incident.update({ where: { id: incident.id }, data: { notified: true } });
+      // last_notified_at diisi sejak alert pertama: pengingat berikutnya
+      // dihitung dari kabar terakhir, bukan dari awal incident.
+      await prisma.incident.update({
+        where: { id: incident.id },
+        data: { notified: true, last_notified_at: new Date() },
+      });
       notifyMonitorEvent(monitor, "down", beat, incident);
       // Rantai eskalasi menumpang di atas alert biasa, bukan menggantikannya:
       // channel monitor tetap dikabari sekarang, sedangkan policy mengatur siapa

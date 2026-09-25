@@ -23,7 +23,11 @@ async function uptimeMap(ids, hours) {
     SELECT monitor_id,
            COUNT(*) FILTER (WHERE status = 1)::int          AS up,
            COUNT(*) FILTER (WHERE status IN (0,1))::int     AS total,
-           AVG(response_time) FILTER (WHERE status = 1)::float AS avg_ms
+           AVG(response_time) FILTER (WHERE status = 1)::float AS avg_ms,
+           -- p95 berdampingan dengan rata-rata: rata-rata menyembunyikan ekor,
+           -- dan ekor itulah yang benar-benar dirasakan sebagian pengguna
+           percentile_cont(0.95) WITHIN GROUP (ORDER BY response_time)
+             FILTER (WHERE status = 1 AND response_time IS NOT NULL)::float AS p95_ms
     FROM heartbeats
     WHERE monitor_id IN (${Prisma.join(ids)}) AND created_at >= ${since} AND maintenance = false
       ${PRIMARY_ONLY()}
@@ -32,6 +36,7 @@ async function uptimeMap(ids, hours) {
     map.set(r.monitor_id, {
       uptime: r.total ? Math.round((r.up / r.total) * 10000) / 100 : null,
       avgMs: r.avg_ms ? Math.round(r.avg_ms) : null,
+      p95Ms: r.p95_ms ? Math.round(r.p95_ms) : null,
     });
   }
   return map;
@@ -155,6 +160,7 @@ export async function decorateMonitors(monitors, opts = {}) {
       uptime_24h: d24.get(m.id)?.uptime ?? null,
       uptime_30d: d30.get(m.id)?.uptime ?? null,
       avg_response_24h: d24.get(m.id)?.avgMs ?? null,
+      p95_response_24h: d24.get(m.id)?.p95Ms ?? null,
       tags: (tags || []).map((t) => t.tag),
       notification_ids: (notifications || []).map((n) => n.notification_id),
       // auth_secret sudah dibuang di atas. Username Basic Auth bukan rahasia dan
