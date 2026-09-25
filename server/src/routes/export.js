@@ -6,6 +6,7 @@ import { STATUS_LABEL } from "../lib/status.js";
 import { config } from "../config.js";
 import { buildAuditWhere } from "./audit.js";
 import { slaReport, monthRange, parseMonth, humanDuration } from "../lib/sla.js";
+import { buildBackup } from "../lib/backup.js";
 
 export const exportRouter = Router();
 exportRouter.use(requireAuth);
@@ -260,29 +261,7 @@ exportRouter.get("/audit", requireAdmin, async (req, res) => {
 
 // Backup konfigurasi (tanpa data heartbeat). Kredensial notifikasi TIDAK diekspor.
 exportRouter.get("/config", requireAdmin, async (req, res) => {
-  const [monitors, tags, statusPages, maintenance, notifications] = await Promise.all([
-    prisma.monitor.findMany({ include: { tags: { include: { tag: true } }, notifications: true }, orderBy: { id: "asc" } }),
-    prisma.tag.findMany({ orderBy: { id: "asc" } }),
-    prisma.statusPage.findMany({ include: { monitors: { orderBy: { sort_order: "asc" } } }, orderBy: { id: "asc" } }),
-    prisma.maintenanceWindow.findMany({ orderBy: { id: "asc" } }),
-    prisma.notification.findMany({ orderBy: { id: "asc" } }),
-  ]);
-  const payload = {
-    exported_at: new Date().toISOString(),
-    version: 2,
-    note: "Konfigurasi notifikasi sengaja tidak diekspor (berisi token/kredensial).",
-    monitors: monitors.map(({ tags: t, notifications: n, push_token, ...m }) => ({
-      ...m,
-      // push_token adalah kredensial — jangan ikut dalam backup yang bisa dibagikan
-      has_push_token: !!push_token,
-      tags: t.map((x) => x.tag.name),
-      notification_ids: n.map((x) => x.notification_id),
-    })),
-    tags,
-    status_pages: statusPages.map(({ monitors: sm, ...p }) => ({ ...p, monitor_ids: sm.map((x) => x.monitor_id) })),
-    maintenance_windows: maintenance,
-    notifications: notifications.map(({ config, ...n }) => ({ ...n, config: "<redacted>" })),
-  };
+  const payload = await buildBackup();
   res.set("Content-Disposition", `attachment; filename="pulsewatch-config-${new Date().toISOString().slice(0, 10)}.json"`);
   res.json(payload);
 });

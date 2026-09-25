@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Download, Languages, Moon, Sun, Laptop, Check, Activity, Database, Server, Crown } from "lucide-react";
+import { Download, Languages, Moon, Sun, Laptop, Check, Activity, Database, Server, Crown, Upload, AlertTriangle } from "lucide-react";
 import clsx from "clsx";
 import { api, download, setToken } from "../lib/api.js";
 import { useI18n, LANGUAGES } from "../lib/i18n.jsx";
@@ -25,6 +25,21 @@ export default function Settings() {
   const [range, setRange] = useState({ monitorId: "", from: weekAgo, to: today });
 
   const [health, setHealth] = useState(null);
+  const [restore, setRestore] = useState(null); // null | { memuat } | hasil | { error }
+
+  // Berkas dibaca di browser lalu dikirim sebagai JSON biasa, bukan multipart:
+  // isinya memang JSON, dan tidak ada gunanya menambah penanganan unggahan
+  // berkas di server hanya untuk ini.
+  const pulihkan = async (file) => {
+    if (!file) return;
+    setRestore({ memuat: true });
+    try {
+      const isi = JSON.parse(await file.text());
+      setRestore(await api("/backup/restore", { method: "POST", body: isi }));
+    } catch (err) {
+      setRestore({ error: err.message });
+    }
+  };
 
   useEffect(() => { api("/monitors").then(setMonitors).catch(() => {}); }, []);
 
@@ -174,6 +189,56 @@ export default function Settings() {
           )}
         </div>
         {isAdmin && <p className="text-xs text-muted">{t("settings.exportConfigHint")}</p>}
+
+        {isAdmin && (
+          <div className="border-t border-border pt-4 space-y-3">
+            <h3 className="text-sm font-medium text-fg">{t("restore.title")}</h3>
+            <p className="text-xs text-muted">{t("restore.hint")}</p>
+            <label className="btn-ghost justify-start cursor-pointer w-fit">
+              <Upload size={14} /> {restore?.memuat ? t("restore.working") : t("restore.pick")}
+              <input
+                type="file"
+                accept="application/json,.json"
+                className="hidden"
+                onChange={(e) => { pulihkan(e.target.files?.[0]); e.target.value = ""; }}
+              />
+            </label>
+
+            {restore?.error && <p className="text-sm text-down">{restore.error}</p>}
+
+            {restore?.ok && (
+              <div className="rounded-lg border border-border bg-panel2/50 p-3 space-y-2">
+                <p className="text-sm text-up">{t("restore.done")}</p>
+                <ul className="text-xs text-muted space-y-0.5">
+                  {Object.entries(restore.dibuat)
+                    .filter(([, n]) => n > 0)
+                    .map(([bagian, n]) => (
+                      <li key={bagian}>{t(`restore.part.${bagian}`, { n })}</li>
+                    ))}
+                  {Object.values(restore.dibuat).every((n) => n === 0) && <li>{t("restore.nothingNew")}</li>}
+                </ul>
+
+                {/* Yang dilewati disebut namanya: tanpa itu orang mengira
+                    entrinya sudah ikut diperbarui, padahal hanya dilewati. */}
+                {Object.entries(restore.dilewati).some(([, arr]) => arr.length > 0) && (
+                  <p className="text-xs text-muted">
+                    {t("restore.skipped", {
+                      n: Object.values(restore.dilewati).reduce((a, b) => a + b.length, 0),
+                    })}
+                  </p>
+                )}
+
+                {restore.peringatan?.length > 0 && (
+                  <ul className="text-xs text-pending space-y-0.5">
+                    {restore.peringatan.map((p, i) => (
+                      <li key={i} className="flex gap-1.5"><AlertTriangle size={12} className="shrink-0 mt-0.5" /> {p}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="border-t border-border pt-4 space-y-3">
           <h3 className="text-sm font-medium text-fg">{t("settings.exportRange")}</h3>

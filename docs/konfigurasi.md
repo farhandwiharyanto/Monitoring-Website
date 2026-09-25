@@ -46,6 +46,38 @@ Semua opsional kecuali yang ditandai. Daftar lengkap ada di `.env.example`.
 > Set `ENCRYPTION_KEY` sendiri kalau ingin memutar `JWT_SECRET` tanpa efek samping itu.
 > Worker multi-location harus memakai nilai yang sama dengan instance web.
 
+### Backup & pulihkan konfigurasi
+
+**Pengaturan → Export data → Backup konfigurasi (JSON)** mengunduh seluruh
+penyiapan: monitor beserta dependency dan tag-nya, channel notifikasi, status
+page, maintenance window, escalation policy, dan jadwal on-call. Yang tidak ikut
+adalah data deret waktu (heartbeat, incident, audit log) dan pengguna.
+
+> **Berkas ini rahasia.** Kredensial monitor — Basic Auth, Bearer token, dan
+> connection string database — ikut di dalamnya dalam bentuk terenkripsi.
+> Hanya instance dengan `ENCRYPTION_KEY` (atau `JWT_SECRET`) yang sama yang bisa
+> membukanya, tapi berkasnya tetap bukan sesuatu yang boleh dibagikan bebas.
+
+Pemulihannya di bawah tombol itu: pilih berkas backup, dan isinya digabungkan ke
+instance ini. **Entri yang namanya sudah ada dilewati** — tidak ada yang ditimpa
+atau dihapus. Karena itu restore aman diulang, dan memulihkan ke instance yang
+sudah terisi tidak pernah menghapus pekerjaan orang lain. Yang dilewati dihitung
+dan ditampilkan, supaya tidak ada yang mengira entrinya ikut diperbarui.
+
+Relasi dipulihkan lewat **nama**, bukan id: monitor induk, tag, channel
+notifikasi, dan isi status page dicari berdasarkan namanya di instance tujuan.
+
+Tiga hal yang perlu ditangani sendiri setelah restore, dan ketiganya disebut di
+ringkasan hasil:
+
+- **Channel notifikasi dibuat tanpa kredensial.** Token bot dan webhook URL
+  tidak diekspor karena tersimpan polos, tidak terenkripsi seperti kredensial
+  monitor. Isi ulang sebelum channel-nya bisa mengirim.
+- **Monitor push mendapat token baru**, jadi URL push di sisi pengirim harus
+  diperbarui.
+- **Custom domain status page tidak ikut dipulihkan**, karena domainnya unik
+  lintas halaman dan bisa bentrok dengan instance lama yang masih hidup.
+
 ### Satu pemimpin per lokasi
 
 Beberapa proses boleh menunjuk ke database yang sama, tapi untuk tiap

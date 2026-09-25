@@ -26,6 +26,7 @@ import { incidentsRouter } from "./routes/incidents.js";
 import { auditRouter } from "./routes/audit.js";
 import { reportsRouter } from "./routes/reports.js";
 import { oncallRouter, ackRouter } from "./routes/oncall.js";
+import { backupRouter } from "./routes/backup.js";
 
 // Mode worker (WORKER_ONLY=true): hanya menjalankan scheduler dan menulis
 // heartbeat berlabel LOCATION_NAME ke database yang sama. Tidak membuka HTTP.
@@ -94,6 +95,8 @@ app.use("/api/public/status", publicStatusRouter);
 app.use("/api/push", pushRouter);
 app.use("/api/settings", settingsRouter);
 app.use("/api/export", exportRouter);
+// Pemulihan konfigurasi: membuat channel & monitor, jadi bukan untuk API key
+app.use("/api/backup", denyApiKey, backupRouter);
 // Prometheus meng-scrape /metrics (di luar /api agar konfigurasinya lazim)
 app.use("/metrics", metricsRouter);
 app.use("/api/tags", tagsRouter);

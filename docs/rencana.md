@@ -33,10 +33,6 @@ riwayat pengiriman notifikasi yang menjaganya.
 
 ### Sisa fondasi
 
-- **Backup/restore konfigurasi.** Export sekarang hanya data (heartbeat,
-  monitor, audit). Tidak ada cara memindahkan seluruh konfigurasi — monitor,
-  notifikasi, status page, escalation policy — ke instance lain, jadi pindah
-  server berarti menyusun ulang semuanya dengan tangan.
 - **Tes yang menyentuh database.** Yang ada sekarang hanya logika murni.
   `slaReport`, `blockingAncestor`, dan rantai eskalasi baru benar-benar teruji
   bila dijalankan pada Postgres; job `migrations` di CI sudah menyiapkan
