@@ -35,3 +35,28 @@ export async function pruneOldAuditLogs() {
   const { count } = await prisma.auditLog.deleteMany({ where: { created_at: { lt: cutoff } } });
   if (count) console.log(`[db] prune ${count} audit log lama`);
 }
+
+// Ping database untuk endpoint /api/health. Dipakai orchestrator (healthcheck
+// Docker, probe Kubernetes) untuk membedakan "proses hidup" dari "aplikasi
+// benar-benar bisa bekerja" — tanpa ini, instance yang kehilangan database
+// tetap dilaporkan sehat dan tidak pernah di-restart.
+// Diberi batas waktu sendiri karena kueri Prisma tidak punya: database yang
+// menggantung (bukan menolak) akan membuat permintaan health ikut menggantung,
+// padahal justru saat itulah jawabannya paling dibutuhkan.
+export async function pingDb({ timeoutMs = 3000 } = {}) {
+  const start = performance.now();
+  let timer;
+  try {
+    await Promise.race([
+      prisma.$queryRaw`SELECT 1`,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`Database tidak menjawab dalam ${timeoutMs}ms`)), timeoutMs);
+      }),
+    ]);
+    return { ok: true, latency_ms: Math.round(performance.now() - start) };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  } finally {
+    clearTimeout(timer);
+  }
+}

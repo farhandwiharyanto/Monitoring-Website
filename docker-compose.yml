@@ -19,6 +19,8 @@ services:
     build: .
     container_name: pulsewatch
     restart: unless-stopped
+    # Beri ruang bagi shutdown rapi (SHUTDOWN_TIMEOUT_SECONDS) sebelum SIGKILL
+    stop_grace_period: 30s
     depends_on:
       postgres:
         condition: service_healthy
@@ -52,6 +54,9 @@ services:
       # Rate limit API key & webhook aksi
       API_KEY_RATE_LIMIT: ${API_KEY_RATE_LIMIT:-60}
       ACTION_WEBHOOK_ATTEMPTS: ${ACTION_WEBHOOK_ATTEMPTS:-3}
+      # Lease scheduler: hanya satu proses per lokasi yang menjalankan check
+      SCHEDULER_LEASE_SECONDS: ${SCHEDULER_LEASE_SECONDS:-30}
+      SHUTDOWN_TIMEOUT_SECONDS: ${SHUTDOWN_TIMEOUT_SECONDS:-15}
     volumes:
       # Opsional: taruh file SQLite lama di ./legacy/ untuk dimigrasi
       # docker compose exec pulsewatch npm run migrate:sqlite -- /legacy/pulsewatch.db
@@ -81,6 +86,8 @@ services:
       WORKER_ONLY: "true"
       LOCATION_NAME: ${WORKER_LOCATION_NAME:-secondary}
       PRIMARY_LOCATION: ${PRIMARY_LOCATION:-primary}
+      SCHEDULER_LEASE_SECONDS: ${SCHEDULER_LEASE_SECONDS:-30}
+      SHUTDOWN_TIMEOUT_SECONDS: ${SHUTDOWN_TIMEOUT_SECONDS:-15}
       TZ: ${TZ:-Asia/Jakarta}
     # Migration dijalankan instance web; worker langsung mulai agar tidak balapan
     command: ["node", "src/index.js"]

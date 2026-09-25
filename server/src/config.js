@@ -90,6 +90,16 @@ export const config = {
   // Target SLO bawaan untuk monitor baru (persen). Kosong = tanpa target.
   sloDefaultTarget: process.env.SLO_DEFAULT_TARGET ? Number(process.env.SLO_DEFAULT_TARGET) : null,
 
+  // --- Lease scheduler & shutdown ---
+  // Berapa lama lease kepemimpinan berlaku sejak terakhir diperbarui. Proses
+  // lain baru boleh mengambil alih setelah selang ini terlewat tanpa perpanjangan.
+  schedulerLeaseSeconds: Number(process.env.SCHEDULER_LEASE_SECONDS || 30),
+  // Jarak antar perpanjangan. Harus jauh lebih kecil dari masa berlaku supaya
+  // gangguan sesaat tidak langsung melepas kepemimpinan.
+  schedulerLeaseRenewSeconds: Number(process.env.SCHEDULER_LEASE_RENEW_SECONDS || 10),
+  // Batas waktu berhenti dengan rapi sebelum proses dipaksa keluar (detik).
+  shutdownTimeoutSeconds: Number(process.env.SHUTDOWN_TIMEOUT_SECONDS || 15),
+
   // Retensi audit log (hari). Lebih panjang dari heartbeat karena yang disimpan
   // adalah jejak perubahan konfigurasi, bukan data deret waktu.
   auditRetentionDays: Number(process.env.AUDIT_RETENTION_DAYS || 365),

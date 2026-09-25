@@ -542,3 +542,19 @@ model EscalationDelivery {
   @@index([escalation_id, step_order])
   @@map("escalation_deliveries")
 }
+
+// --- Phase 8: lease scheduler ---
+
+// Satu baris per lokasi, dipegang oleh proses yang sedang menjalankan check.
+// Proses lain dengan lokasi sama melihat lease ini masih berlaku dan diam,
+// jadi replika atau rolling deploy tidak membuat check & alert dobel.
+// Lease diperpanjang berkala; bila pemegangnya mati, lease kedaluwarsa sendiri
+// dan proses lain mengambil alih tanpa perlu campur tangan.
+model SchedulerLease {
+  location   String   @id
+  holder     String   // pengenal proses: host:pid:acak
+  expires_at DateTime
+  updated_at DateTime @default(now())
+
+  @@map("scheduler_leases")
+}

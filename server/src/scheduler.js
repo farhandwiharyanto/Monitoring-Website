@@ -10,31 +10,72 @@ import { findMonitor } from "./lib/stats.js";
 import { isInMaintenance } from "./lib/maintenance.js";
 import { blockingAncestor } from "./lib/dependency.js";
 import { startEscalation, stopEscalation, runDueDeliveries } from "./lib/escalation.js";
+import { isLeading, startLeaseLoop, releaseLease } from "./lib/leader.js";
 
 // State in-memory per monitor: kapan check berikutnya, retry count, sedang jalan atau tidak
 const state = new Map(); // id -> { nextRun, retries, running, nextCertCheck }
 let io = null;
 let cache = { monitors: [], at: 0, dirty: true };
+// Task cron yang dibuat instance ini, supaya bisa dihentikan saat shutdown
+const tasks = [];
+// Setelah shutdown dimulai, tidak ada pekerjaan baru yang boleh dimulai
+let stopping = false;
 
 // Handshake TLS mahal, jadi sertifikat tidak diperiksa tiap interval check
 const certCheckIntervalMs = () => Math.max(1, config.certCheckIntervalHours) * 3600_000;
 
-export function initScheduler(socketIo) {
+export async function initScheduler(socketIo) {
   io = socketIo;
+  // Kepemimpinan diambil lebih dulu dan ditunggu: proses ini tidak boleh
+  // sempat menjalankan satu check pun sebelum tahu dirinya yang bertugas.
+  await startLeaseLoop();
+
   // node-cron: tick setiap detik, jalankan monitor yang sudah jatuh tempo
-  cron.schedule("* * * * * *", () => tick().catch((e) => console.error("[scheduler]", e)));
+  tasks.push(cron.schedule("* * * * * *", () => tick().catch((e) => console.error("[scheduler]", e))));
   // Eskalasi on-call: tingkat berikutnya dikirim saat jedanya jatuh tempo.
   // Jeda diukur dalam menit, jadi 10 detik sekali sudah lebih dari cukup.
   // Hanya lokasi primary — dia yang memegang incident dan alert.
   if (isPrimaryLocation()) {
-    cron.schedule("*/10 * * * * *", () => runDueDeliveries().catch((e) => console.error("[escalation]", e)));
+    tasks.push(
+      cron.schedule("*/10 * * * * *", () => {
+        if (!active()) return;
+        runDueDeliveries().catch((e) => console.error("[escalation]", e));
+      })
+    );
   }
-  // Bersihkan heartbeat & audit log lama setiap hari jam 03:00
-  cron.schedule("0 3 * * *", () => {
-    pruneOldHeartbeats().catch(console.error);
-    pruneOldAuditLogs().catch(console.error);
-  });
+  // Bersihkan heartbeat & audit log lama setiap hari jam 03:00.
+  // Cukup dikerjakan pemimpin: dua proses yang menghapus baris yang sama
+  // hanya saling menunggu kunci baris tanpa menambah manfaat.
+  tasks.push(
+    cron.schedule("0 3 * * *", () => {
+      if (!active()) return;
+      pruneOldHeartbeats().catch(console.error);
+      pruneOldAuditLogs().catch(console.error);
+    })
+  );
   console.log("[scheduler] berjalan");
+}
+
+// Boleh memulai pekerjaan baru? Hanya bila belum shutdown dan lease masih dipegang.
+const active = () => !stopping && isLeading();
+
+// Berhenti dengan rapi: cron dimatikan, check yang sedang jalan ditunggu
+// sebentar supaya hasilnya sempat tercatat, lalu lease dilepas agar proses
+// pengganti langsung mengambil alih tanpa menunggu lease kedaluwarsa.
+export async function stopScheduler({ waitMs = 5000 } = {}) {
+  stopping = true;
+  for (const task of tasks) task.stop();
+  tasks.length = 0;
+
+  const deadline = Date.now() + waitMs;
+  while (Date.now() < deadline && [...state.values()].some((s) => s.running)) {
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  const stragglers = [...state.values()].filter((s) => s.running).length;
+  if (stragglers) console.warn(`[scheduler] ${stragglers} check masih berjalan saat berhenti`);
+
+  await releaseLease();
+  console.log("[scheduler] berhenti");
 }
 
 // Dipanggil setelah monitor dibuat/diubah agar langsung dicek
@@ -58,6 +99,9 @@ async function activeMonitors() {
 }
 
 async function tick() {
+  // Proses yang tidak memegang lease diam saja: API-nya tetap melayani,
+  // hanya check-nya yang ditahan supaya tidak dobel dengan pemimpin.
+  if (!active()) return;
   const now = Date.now();
   const monitors = await activeMonitors();
   const activeIds = new Set(monitors.map((m) => m.id));

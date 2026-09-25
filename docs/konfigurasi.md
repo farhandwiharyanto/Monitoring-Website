@@ -32,12 +32,52 @@ Semua opsional kecuali yang ditandai. Daftar lengkap ada di `.env.example`.
 | `API_KEY_RATE_WINDOW_SECONDS` | `60` | Panjang jendela rate limit API key |
 | `ACTION_WEBHOOK_ATTEMPTS` | `3` | Percobaan pemanggilan webhook aksi (termasuk yang pertama) |
 | `ACTION_WEBHOOK_TIMEOUT_SECONDS` | `15` | Timeout tiap pemanggilan webhook aksi |
+| `SCHEDULER_LEASE_SECONDS` | `30` | Masa berlaku lease pemimpin scheduler sejak perpanjangan terakhir |
+| `SCHEDULER_LEASE_RENEW_SECONDS` | `10` | Jarak antar perpanjangan lease |
+| `SHUTDOWN_TIMEOUT_SECONDS` | `15` | Batas berhenti rapi sebelum proses dipaksa keluar |
 
 > **Kredensial monitor:** Basic Auth dan Bearer token milik monitor disimpan terenkripsi
 > AES-256-GCM. Kuncinya diturunkan dari `JWT_SECRET` bila `ENCRYPTION_KEY` kosong, jadi
 > **mengganti `JWT_SECRET` membuat kredensial monitor lama tidak terbaca** dan harus diisi ulang.
 > Set `ENCRYPTION_KEY` sendiri kalau ingin memutar `JWT_SECRET` tanpa efek samping itu.
 > Worker multi-location harus memakai nilai yang sama dengan instance web.
+
+### Satu pemimpin per lokasi
+
+Beberapa proses boleh menunjuk ke database yang sama, tapi untuk tiap
+`LOCATION_NAME` hanya **satu** yang menjalankan check. Kepemimpinannya dipegang
+lewat satu baris di tabel `scheduler_leases` yang diperpanjang tiap
+`SCHEDULER_LEASE_RENEW_SECONDS`; proses lain melihat lease itu masih berlaku dan
+menahan check-nya, sambil tetap melayani API dan UI seperti biasa.
+
+Gunanya: replika, atau container baru yang tumpang tindih dengan yang lama saat
+deploy, tidak meng-check monitor yang sama dua kali dan tidak mengirim alert
+ganda. Kalau pemegangnya mati mendadak, lease kedaluwarsa sendiri dan proses
+lain mengambil alih dalam hitungan `SCHEDULER_LEASE_SECONDS`.
+
+Lokasi yang berbeda tetap berjalan sendiri-sendiri — multi-location tidak
+terpengaruh, yang dicegah hanya dua proses pada lokasi yang sama.
+
+### Berhenti dengan rapi
+
+`SIGTERM` dan `SIGINT` tidak langsung mematikan proses: cron dihentikan, check
+yang sedang berjalan ditunggu sampai `SHUTDOWN_TIMEOUT_SECONDS` supaya hasilnya
+sempat tercatat, lease dilepas agar pengganti langsung mengambil alih, lalu
+koneksi database ditutup. Di `docker-compose.yml`, `stop_grace_period: 30s`
+memberi ruang untuk itu sebelum Docker mengirim `SIGKILL`.
+
+### Health check
+
+`GET /api/health` menyentuh database, bukan sekadar membuktikan proses hidup.
+Bila database tidak menjawab dalam 3 detik, endpoint membalas **503** sehingga
+`HEALTHCHECK` Docker dan probe Kubernetes ikut menandainya tidak sehat. Balasannya
+juga menyebut lokasi dan apakah proses ini sedang memimpin scheduler:
+
+```json
+{ "ok": true, "location": "primary",
+  "database": { "ok": true, "latency_ms": 3 },
+  "scheduler": { "leading": true, "holder": "web-1:42:a1b2c3" } }
+```
 
 ### Keamanan yang aktif secara bawaan
 - Rate limit login per IP **dan** per username; setelah batas terlampaui akun dikunci sementara
