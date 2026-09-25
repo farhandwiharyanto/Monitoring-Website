@@ -5,7 +5,7 @@ menjalankannya untuk diuji. Ditulis untuk sesi kerja berikutnya.
 
 [← Kembali ke README](../README.md)
 
-Terakhir diperbarui: 26 September 2026 · commit `40f36b2`
+Terakhir diperbarui: 26 September 2026 · commit `1e1d1f8`
 
 ## Sudah selesai
 
@@ -20,7 +20,7 @@ Terakhir diperbarui: 26 September 2026 · commit `40f36b2`
 | 7 | Jadwal on-call, escalation policy berjenjang, acknowledge | `9ab321d` `ea1601e` |
 | 8 (fondasi) | Lease scheduler, health cek DB, shutdown rapi, riwayat pengiriman notifikasi, tes unit & CI | `27e5581` `b6355fa` `40f36b2` |
 | 8 (fitur) | Status degraded & ambang latency per monitor | `76ede23` |
-| 8 (fitur) | Pengingat "masih down", feed Atom status page, ringkasan harian & p95 | — |
+| 8 (fitur) | Pengingat "masih down", feed Atom status page, ringkasan harian & p95 | `1e1d1f8` |
 
 Polanya: tiap phase jadi dua commit — server dulu, lalu klien & dokumentasi.
 
