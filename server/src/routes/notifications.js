@@ -18,8 +18,62 @@ function clean(body) {
   return { name, type, config: cfg, is_default: !!body?.is_default };
 }
 
+// Ringkasan kesehatan tiap saluran: hasil pengiriman terakhir dan berapa kali
+// gagal dalam 24 jam terakhir. Dipakai badge di daftar notifikasi supaya
+// saluran yang mati terlihat tanpa perlu membuka riwayatnya satu per satu.
+async function deliveryHealth() {
+  const since = new Date(Date.now() - 86400_000);
+  const [latest, failures] = await Promise.all([
+    // DISTINCT ON: satu baris terbaru per notifikasi, dalam satu kueri
+    prisma.$queryRaw`
+      SELECT DISTINCT ON ("notification_id") "notification_id", "ok", "error", "created_at"
+      FROM notification_logs
+      WHERE "notification_id" IS NOT NULL
+      ORDER BY "notification_id", "created_at" DESC`,
+    prisma.notificationLog.groupBy({
+      by: ["notification_id"],
+      where: { ok: false, created_at: { gte: since }, notification_id: { not: null } },
+      _count: { _all: true },
+    }),
+  ]);
+
+  const empty = () => ({ last_ok: null, last_error: null, last_sent_at: null, failures_24h: 0 });
+  const byId = new Map();
+  for (const row of latest) {
+    byId.set(row.notification_id, {
+      ...empty(), last_ok: row.ok, last_error: row.error, last_sent_at: row.created_at,
+    });
+  }
+  for (const row of failures) {
+    const current = byId.get(row.notification_id) || empty();
+    byId.set(row.notification_id, { ...current, failures_24h: row._count._all });
+  }
+  return { byId, empty };
+}
+
 notificationsRouter.get("/", async (req, res) => {
-  res.json(await prisma.notification.findMany({ orderBy: { name: "asc" } }));
+  const [list, health] = await Promise.all([
+    prisma.notification.findMany({ orderBy: { name: "asc" } }),
+    deliveryHealth(),
+  ]);
+  res.json(list.map((n) => ({ ...n, delivery: health.byId.get(n.id) || health.empty() })));
+});
+
+// Riwayat pengiriman. `only=failed` menyaring yang gagal saja — itu yang
+// biasanya dicari saat orang bertanya "kenapa saya tidak dapat alertnya?".
+notificationsRouter.get("/logs", async (req, res) => {
+  const take = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
+  const where = {};
+  const id = Number(req.query.notification_id);
+  if (Number.isInteger(id) && id > 0) where.notification_id = id;
+  if (req.query.only === "failed") where.ok = false;
+  res.json(
+    await prisma.notificationLog.findMany({
+      where,
+      orderBy: [{ created_at: "desc" }, { id: "desc" }],
+      take,
+    })
+  );
 });
 
 notificationsRouter.post("/", async (req, res) => {
@@ -65,8 +119,13 @@ notificationsRouter.delete("/:id", async (req, res) => {
 // Kirim pesan uji (bisa untuk yang belum tersimpan). Tanpa retry supaya
 // error konfigurasi langsung terlihat di UI.
 notificationsRouter.post("/test", async (req, res) => {
+  // Bila yang diuji adalah saluran yang sudah tersimpan, id-nya diteruskan
+  // supaya hasilnya tercatat atas nama saluran itu dan badge-nya ikut
+  // diperbarui — menguji ulang setelah memperbaiki token jadi terasa langsung.
+  const id = Number(req.body?.id);
+  const notification = { ...clean(req.body), ...(Number.isInteger(id) && id > 0 ? { id } : {}) };
   try {
-    await sendNotification(clean(req.body), {
+    await sendNotification(notification, {
       event: "test", status: "up",
       title: "🔔 [Pulsewatch] Test notification",
       body: "Jika kamu menerima pesan ini, konfigurasi notifikasi sudah benar.",

@@ -543,6 +543,36 @@ model EscalationDelivery {
   @@map("escalation_deliveries")
 }
 
+// Riwayat pengiriman notifikasi, termasuk percobaan yang gagal. Sebelumnya
+// kegagalan kirim hanya tercetak ke stdout, jadi saluran alert yang mati —
+// bot dicabut, SMTP ditolak, webhook 404 — tidak terlihat dari aplikasi sama
+// sekali. Untuk alat monitoring, itu kegagalan yang paling perlu terlihat.
+//
+// Sengaja tanpa foreign key ke notifications, sama alasannya dengan
+// EscalationDelivery: menghapus sebuah notifikasi tidak boleh menghapus jejak
+// apa saja yang pernah dikirim lewatnya. Nama & tipe disalin saat kirim.
+model NotificationLog {
+  id                Int      @id @default(autoincrement())
+  notification_id   Int?
+  notification_name String
+  type              String
+  // monitor.down | monitor.up | monitor.cert_expiry | monitor.escalation | test
+  event             String
+  monitor_id        Int?
+  monitor_name      String?
+  ok                Boolean  @default(false)
+  // Berapa percobaan yang terpakai (sendNotification mengulang dengan jeda menaik)
+  attempts          Int      @default(1)
+  error             String?
+  duration_ms       Int?
+  created_at        DateTime @default(now())
+
+  @@index([created_at(sort: Desc)])
+  @@index([notification_id, created_at(sort: Desc)])
+  @@index([ok, created_at(sort: Desc)])
+  @@map("notification_logs")
+}
+
 // --- Phase 8: lease scheduler ---
 
 // Satu baris per lokasi, dipegang oleh proses yang sedang menjalankan check.

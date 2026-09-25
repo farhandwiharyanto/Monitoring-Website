@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { Bell, Plus, Trash2, Pencil, Send, X } from "lucide-react";
+import { Bell, Plus, Trash2, Pencil, Send, X, History, AlertTriangle } from "lucide-react";
 import clsx from "clsx";
 import { api } from "../lib/api.js";
 import { useI18n } from "../lib/i18n.jsx";
+import { fmtTime, timeAgo } from "../lib/format.js";
 
 // Definisi field per provider: [key, label, placeholder, inputType]
 const TYPES = {
@@ -29,14 +30,61 @@ const TYPES = {
 
 const emptyForm = { name: "", type: "telegram", config: {}, is_default: false };
 
+// Event pada riwayat kirim ditampilkan dalam bahasa manusia
+const EVENT_KEY = {
+  "monitor.down": "notif.eventDown",
+  "monitor.up": "notif.eventUp",
+  "monitor.cert_expiry": "notif.eventCert",
+  "monitor.escalation": "notif.eventEscalation",
+  test: "notif.eventTest",
+};
+
+// Status pengiriman terakhir sebuah channel. Tiga keadaan yang berbeda
+// artinya: gagal (alert tidak sampai), pulih tapi sempat gagal hari ini,
+// dan sehat. Channel yang belum pernah dipakai tidak diberi tanda apa pun
+// supaya tidak terbaca seperti peringatan.
+function DeliveryChip({ delivery, t }) {
+  const d = delivery || {};
+  if (d.last_ok === null || d.last_ok === undefined) {
+    return <span className="text-xs text-muted">{t("notif.deliveryNever")}</span>;
+  }
+  const failing = d.last_ok === false;
+  const shaky = !failing && d.failures_24h > 0;
+  return (
+    <span
+      className={clsx(
+        "inline-flex items-center gap-1.5 text-xs rounded px-1.5 py-0.5 border",
+        failing && "text-down border-down/40 bg-down/10",
+        shaky && "text-pending border-pending/40 bg-pending/10",
+        !failing && !shaky && "text-up border-up/30 bg-up/10"
+      )}
+      title={d.last_error || ""}
+    >
+      <span className={clsx("h-1.5 w-1.5 rounded-full", failing ? "bg-down" : shaky ? "bg-pending" : "bg-up")} />
+      {failing ? t("notif.deliveryFailed") : shaky ? t("notif.deliveryRecovered") : t("notif.deliveryOk")}
+      {d.last_sent_at && <span className="text-muted">· {timeAgo(d.last_sent_at)}</span>}
+    </span>
+  );
+}
+
 export default function Notifications() {
   const { t } = useI18n();
   const [list, setList] = useState([]);
   const [editing, setEditing] = useState(null); // null | form object
   const [msg, setMsg] = useState(null);
+  const [openLog, setOpenLog] = useState(null); // id channel yang riwayatnya dibuka
+  const [logs, setLogs] = useState([]);
 
   const load = () => api("/notifications").then(setList);
   useEffect(() => { load(); }, []);
+
+  // Riwayat diambil saat dibuka saja — daftar channel tidak perlu menunggunya
+  const toggleLog = async (n) => {
+    if (openLog === n.id) return setOpenLog(null);
+    setOpenLog(n.id);
+    setLogs([]);
+    setLogs(await api(`/notifications/logs?notification_id=${n.id}&limit=20`));
+  };
 
   const save = async (e) => {
     e.preventDefault();
@@ -54,7 +102,13 @@ export default function Notifications() {
     setMsg({ ok: true, text: t("common.sending") });
     try { await api("/notifications/test", { method: "POST", body: n }); setMsg({ ok: true, text: t("notif.testSent") }); }
     catch (err) { setMsg({ ok: false, text: err.message }); }
+    // Hasil uji ikut tercatat, jadi badge dan riwayat yang terbuka disegarkan
+    load();
+    if (n.id && openLog === n.id) setLogs(await api(`/notifications/logs?notification_id=${n.id}&limit=20`));
   };
+
+  // Channel yang pengiriman terakhirnya gagal — dipakai banner di atas daftar
+  const failing = list.filter((n) => n.delivery?.last_ok === false);
 
   return (
     <div className="space-y-6">
@@ -68,18 +122,59 @@ export default function Notifications() {
 
       {msg && !editing && <p className={clsx("text-sm", msg.ok ? "text-up" : "text-down")}>{msg.text}</p>}
 
+      {/* Channel yang mati adalah kegagalan paling berbahaya di alat monitoring:
+          semuanya tampak hijau justru karena alertnya tidak pernah sampai. */}
+      {failing.length > 0 && (
+        <div className="card border-down/40 bg-down/5 px-5 py-3.5 flex items-start gap-3">
+          <AlertTriangle size={18} className="text-down shrink-0 mt-0.5" />
+          <div className="min-w-0">
+            <p className="text-sm text-down font-medium">{t("notif.deliveryBanner", { n: failing.length })}</p>
+            <p className="text-xs text-muted mt-0.5 truncate">
+              {failing.map((n) => n.name).join(", ")}
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="card divide-y divide-border">
         {list.length === 0 && <p className="p-8 text-center text-sm text-muted">{t("notif.empty")}</p>}
         {list.map((n) => (
-          <div key={n.id} className="flex items-center gap-4 px-5 py-3.5">
-            <span className="h-9 w-9 rounded-lg bg-panel2 grid place-items-center"><Bell size={16} className="text-accent" /></span>
-            <div className="flex-1 min-w-0">
-              <p className="font-medium text-fg">{n.name} {n.is_default && <span className="ml-2 text-[10px] uppercase tracking-wider text-accent border border-accent/40 rounded px-1.5 py-0.5">{t("common.default")}</span>}</p>
-              <p className="text-xs text-muted">{TYPES[n.type]?.label || n.type}</p>
+          <div key={n.id} className="px-5 py-3.5">
+            <div className="flex items-center gap-4">
+              <span className="h-9 w-9 rounded-lg bg-panel2 grid place-items-center shrink-0"><Bell size={16} className="text-accent" /></span>
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-fg">{n.name} {n.is_default && <span className="ml-2 text-[10px] uppercase tracking-wider text-accent border border-accent/40 rounded px-1.5 py-0.5">{t("common.default")}</span>}</p>
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-0.5">
+                  <span className="text-xs text-muted">{TYPES[n.type]?.label || n.type}</span>
+                  <DeliveryChip delivery={n.delivery} t={t} />
+                  {n.delivery?.failures_24h > 0 && (
+                    <span className="text-xs text-muted">{t("notif.deliveryFailures", { n: n.delivery.failures_24h })}</span>
+                  )}
+                </div>
+              </div>
+              <button className={clsx("btn-ghost !px-2.5", openLog === n.id && "text-accent")} title={t("notif.history")} onClick={() => toggleLog(n)}><History size={14} /></button>
+              <button className="btn-ghost !px-2.5" title={t("common.sendTest")} onClick={() => test(n)}><Send size={14} /></button>
+              <button className="btn-ghost !px-2.5" onClick={() => { setEditing({ ...n }); setMsg(null); }}><Pencil size={14} /></button>
+              <button className="btn-danger !px-2.5" onClick={() => remove(n)}><Trash2 size={14} /></button>
             </div>
-            <button className="btn-ghost !px-2.5" title={t("common.sendTest")} onClick={() => test(n)}><Send size={14} /></button>
-            <button className="btn-ghost !px-2.5" onClick={() => { setEditing({ ...n }); setMsg(null); }}><Pencil size={14} /></button>
-            <button className="btn-danger !px-2.5" onClick={() => remove(n)}><Trash2 size={14} /></button>
+
+            {openLog === n.id && (
+              <div className="mt-3 ml-0 sm:ml-13 rounded-lg border border-border bg-panel2/50 divide-y divide-border">
+                {logs.length === 0 && <p className="px-3 py-3 text-xs text-muted">{t("notif.historyEmpty")}</p>}
+                {logs.map((row) => (
+                  <div key={row.id} className="flex items-start gap-3 px-3 py-2 text-xs">
+                    <span className={clsx("h-1.5 w-1.5 rounded-full mt-1.5 shrink-0", row.ok ? "bg-up" : "bg-down")} />
+                    <span className="text-fg w-20 shrink-0">{t(EVENT_KEY[row.event] || "notif.eventTest")}</span>
+                    <span className="text-muted flex-1 min-w-0 break-words">
+                      {row.monitor_name && <span className="text-fg">{row.monitor_name} · </span>}
+                      {row.ok ? `${row.duration_ms ?? "—"} ms` : row.error}
+                      {row.attempts > 1 && <span> · {t("notif.historyAttempts", { n: row.attempts })}</span>}
+                    </span>
+                    <span className="text-muted shrink-0">{fmtTime(row.created_at)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         ))}
       </div>

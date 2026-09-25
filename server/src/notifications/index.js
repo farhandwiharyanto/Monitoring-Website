@@ -116,18 +116,55 @@ const providers = {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// Catat hasil satu pengiriman. Sengaja tidak di-await oleh pemanggil: alert
+// tidak boleh tertahan menunggu pencatatannya sendiri, sama seperti audit log.
+// Konsekuensinya sama pula — bila database tumbang tepat di antara keduanya,
+// pengiriman bisa terjadi tanpa jejak.
+function recordDelivery(notification, payload, { ok, attempts, error, ms }) {
+  prisma.notificationLog
+    .create({
+      data: {
+        // Notifikasi uji belum tersimpan, jadi id-nya bisa kosong
+        notification_id: Number.isInteger(notification.id) ? notification.id : null,
+        notification_name: String(notification.name || notification.type || "-").slice(0, 100),
+        type: String(notification.type || "-"),
+        event: String(payload?.event || "-"),
+        monitor_id: payload?.monitor?.id ?? null,
+        monitor_name: payload?.monitor?.name ?? null,
+        ok,
+        attempts,
+        // Pesan provider kadang memuat potongan body; dipotong agar tabel tidak membengkak
+        error: error ? String(error).slice(0, 500) : null,
+        duration_ms: ms,
+      },
+    })
+    .catch((err) => console.error("[notify:log]", err.message));
+}
+
 // Kirim satu notifikasi. `attempts` > 1 akan mengulang dengan jeda menaik —
 // berguna saat provider sedang 5xx atau jaringan sesaat terputus.
-export async function sendNotification(notification, payload, { attempts = 1 } = {}) {
+// Hasilnya dicatat ke notification_logs, berhasil maupun gagal, supaya saluran
+// alert yang mati bisa terlihat dari UI dan bukan cuma dari stdout.
+export async function sendNotification(notification, payload, { attempts = 1, log = true } = {}) {
+  const started = performance.now();
+  const elapsed = () => Math.round(performance.now() - started);
+
   const fn = providers[notification.type];
-  if (!fn) throw new Error(`Tipe notifikasi tidak dikenal: ${notification.type}`);
+  if (!fn) {
+    const err = new Error(`Tipe notifikasi tidak dikenal: ${notification.type}`);
+    if (log) recordDelivery(notification, payload, { ok: false, attempts: 0, error: err.message, ms: elapsed() });
+    throw err;
+  }
   const cfg = typeof notification.config === "string" ? JSON.parse(notification.config) : notification.config || {};
 
   let lastErr;
+  let used = 0;
   for (let i = 1; i <= attempts; i++) {
+    used = i;
     try {
       await fn(cfg, payload);
       if (i > 1) console.log(`[notify] ${notification.type}#${notification.id ?? "-"} berhasil pada percobaan ${i}`);
+      if (log) recordDelivery(notification, payload, { ok: true, attempts: i, error: null, ms: elapsed() });
       return;
     } catch (err) {
       lastErr = err;
@@ -138,6 +175,7 @@ export async function sendNotification(notification, payload, { attempts = 1 } =
       await sleep(delay);
     }
   }
+  if (log) recordDelivery(notification, payload, { ok: false, attempts: used, error: lastErr?.message, ms: elapsed() });
   throw lastErr;
 }
 

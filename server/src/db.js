@@ -36,6 +36,14 @@ export async function pruneOldAuditLogs() {
   if (count) console.log(`[db] prune ${count} audit log lama`);
 }
 
+// Riwayat pengiriman notifikasi ikut dibersihkan (NOTIFICATION_LOG_RETENTION_DAYS)
+export async function pruneOldNotificationLogs() {
+  const days = Math.max(1, config.notificationLogRetentionDays);
+  const cutoff = new Date(Date.now() - days * 86400_000);
+  const { count } = await prisma.notificationLog.deleteMany({ where: { created_at: { lt: cutoff } } });
+  if (count) console.log(`[db] prune ${count} log notifikasi lama`);
+}
+
 // Ping database untuk endpoint /api/health. Dipakai orchestrator (healthcheck
 // Docker, probe Kubernetes) untuk membedakan "proses hidup" dari "aplikasi
 // benar-benar bisa bekerja" — tanpa ini, instance yang kehilangan database

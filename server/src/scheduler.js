@@ -1,5 +1,5 @@
 import cron from "node-cron";
-import { prisma, pruneOldHeartbeats, pruneOldAuditLogs } from "./db.js";
+import { prisma, pruneOldHeartbeats, pruneOldAuditLogs, pruneOldNotificationLogs } from "./db.js";
 import { config, isPrimaryLocation } from "./config.js";
 import { runCheck } from "./checks/index.js";
 import { fetchCertInfo, tlsTarget } from "./checks/cert.js";
@@ -51,6 +51,7 @@ export async function initScheduler(socketIo) {
       if (!active()) return;
       pruneOldHeartbeats().catch(console.error);
       pruneOldAuditLogs().catch(console.error);
+      pruneOldNotificationLogs().catch(console.error);
     })
   );
   console.log("[scheduler] berjalan");

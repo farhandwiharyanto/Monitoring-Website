@@ -108,6 +108,43 @@ sebenarnya berarti menjalankan worker di host atau region lain.
 
 Lokasi yang aktif 7 hari terakhir bisa dilihat di `GET /api/monitors/locations`.
 
+## Riwayat pengiriman notifikasi
+
+Setiap pengiriman dicatat — berhasil maupun gagal — beserta jumlah percobaan,
+lamanya, dan pesan error dari provider. Sebelumnya kegagalan hanya muncul di
+stdout, jadi saluran alert yang mati (bot dicabut, SMTP menolak, webhook 404)
+tidak terlihat dari mana pun di aplikasi. Untuk alat monitoring, itu justru
+kegagalan yang paling perlu terlihat: semuanya tampak hijau bukan karena
+layanan sehat, melainkan karena alertnya tidak pernah sampai.
+
+Di halaman **Notifikasi**, tiap channel menampilkan status pengiriman
+terakhirnya, dan channel yang sedang gagal diangkat sebagai banner di atas
+daftar. Tombol riwayat membuka 20 pengiriman terakhir channel itu.
+
+Lewat API:
+
+```bash
+# 50 pengiriman terakhir
+curl -H "Authorization: Bearer $TOKEN" "$BASE/api/notifications/logs"
+
+# yang gagal saja, untuk satu channel
+curl -H "Authorization: Bearer $TOKEN" \
+  "$BASE/api/notifications/logs?notification_id=3&only=failed"
+```
+
+`GET /api/notifications` ikut menyertakan ringkasan per channel:
+
+```json
+{ "id": 3, "name": "Telegram Ops",
+  "delivery": { "last_ok": false, "last_error": "Telegram 401: unauthorized",
+                "last_sent_at": "2026-09-26T02:10:11.000Z", "failures_24h": 4 } }
+```
+
+Pesan uji dari channel yang sudah tersimpan ikut tercatat atas nama channel
+itu, sehingga menguji ulang setelah memperbaiki token langsung memperbarui
+statusnya. Riwayat dibersihkan tiap hari mengikuti
+`NOTIFICATION_LOG_RETENTION_DAYS` (bawaan 30 hari).
+
 ## Dependency antar-monitor
 
 Satu router mati bisa membuat sepuluh monitor di belakangnya ikut down, dan sepuluh alert

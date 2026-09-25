@@ -90,6 +90,10 @@ export const config = {
   // Target SLO bawaan untuk monitor baru (persen). Kosong = tanpa target.
   sloDefaultTarget: process.env.SLO_DEFAULT_TARGET ? Number(process.env.SLO_DEFAULT_TARGET) : null,
 
+  // Retensi riwayat pengiriman notifikasi (hari). Lebih pendek dari audit log
+  // karena isinya data operasional harian, bukan jejak perubahan konfigurasi.
+  notificationLogRetentionDays: Number(process.env.NOTIFICATION_LOG_RETENTION_DAYS || 30),
+
   // --- Lease scheduler & shutdown ---
   // Berapa lama lease kepemimpinan berlaku sejak terakhir diperbarui. Proses
   // lain baru boleh mengambil alih setelah selang ini terlewat tanpa perpanjangan.
