@@ -45,6 +45,25 @@ const id = {
     count: "{n} monitor", empty: "Belum ada monitor.", notChecked: "belum dicek",
     last24h: "24 jam", last30d: "30 hari", allTags: "Semua tag",
   },
+  system: {
+    title: "Status sistem",
+    hint: "Keadaan instance ini, diperbarui tiap 30 detik.",
+    database: "Database", location: "Lokasi", scheduler: "Scheduler",
+    ok: "Terhubung", failed: "Tidak menjawab",
+    latency: "{ms} ms",
+    locationHint: "Label pada tiap heartbeat yang ditulis instance ini.",
+    leading: "Menjalankan check", standby: "Siaga — proses lain yang menjalankan check",
+  },
+  daily: {
+    title: "Riwayat harian", 
+    hint: "Dari ringkasan harian — tetap ada setelah heartbeat lama dipangkas.",
+    rangeDays: "{n} hari", range365: "1 tahun",
+    empty: "Belum ada ringkasan harian. Terisi otomatis tiap jam.",
+    avg: "Rata-rata", p95: "p95", uptime: "Uptime",
+    minMax: "min {min} / maks {max} ms",
+    degradedBeats: "{n} check melambat",
+    young: "Baru {n} hari terkumpul — garisnya terbentuk seiring waktu.",
+  },
   detail: {
     p95: "p95 {ms} ms (24 jam)",
     checkEvery: "Cek tiap {interval}s · retries {retries} · timeout {timeout}s · terakhir {last}",
@@ -166,6 +185,7 @@ const id = {
     retryHint: "Pengiriman yang gagal sementara diulang otomatis (1 detik, lalu 3 detik).",
   },
   pages: {
+    feed: "Feed", feedHint: "Feed Atom incident untuk halaman ini",
     title: "Status Pages", subtitle: "Halaman publik untuk dibagikan ke user / klien",
     empty: "Belum ada status page.",
     confirmDelete: 'Hapus status page "{title}"?',
@@ -347,7 +367,7 @@ const id = {
   renotify: {
     label: "Ingatkan lagi tiap (menit)", placeholder: "mis. 30",
     hint: "Selama monitor masih down, kabar diulang ke channel yang sama tiap sekian menit — supaya gangguan panjang tidak terlupakan setelah pesan pertamanya tenggelam. Berhenti saat monitor pulih atau eskalasinya sudah ditangani. Kosongkan untuk mengabari sekali saja.",
-    every: "Diingatkan tiap {n} menit",
+    every: "diingatkan tiap {n} menit", sent: "{n} pengingat terkirim",
   },
   incident: {
     updates: "Kabar untuk pengguna", addUpdate: "Tulis kabar",
@@ -413,6 +433,25 @@ const en = {
     title: "Monitors", subtitle: "Grouped by tag", untagged: "Untagged",
     count: "{n} monitors", empty: "No monitors yet.", notChecked: "not checked yet",
     last24h: "24 hours", last30d: "30 days", allTags: "All tags",
+  },
+  system: {
+    title: "System status",
+    hint: "State of this instance, refreshed every 30 seconds.",
+    database: "Database", location: "Location", scheduler: "Scheduler",
+    ok: "Connected", failed: "Not responding",
+    latency: "{ms} ms",
+    locationHint: "The label written on every heartbeat from this instance.",
+    leading: "Running checks", standby: "Standby — another process runs the checks",
+  },
+  daily: {
+    title: "Daily history",
+    hint: "From the daily rollup — kept after old heartbeats are pruned.",
+    rangeDays: "{n} days", range365: "1 year",
+    empty: "No daily summary yet. Filled in automatically every hour.",
+    avg: "Average", p95: "p95", uptime: "Uptime",
+    minMax: "min {min} / max {max} ms",
+    degradedBeats: "{n} slow checks",
+    young: "Only {n} days collected so far — the line fills in over time.",
   },
   detail: {
     p95: "p95 {ms} ms (24h)",
@@ -535,6 +574,7 @@ const en = {
     retryHint: "Temporary delivery failures are retried automatically (after 1s, then 3s).",
   },
   pages: {
+    feed: "Feed", feedHint: "Atom incident feed for this page",
     title: "Status pages", subtitle: "Public pages to share with users or clients",
     empty: "No status pages yet.",
     confirmDelete: 'Delete status page "{title}"?',
@@ -716,7 +756,7 @@ const en = {
   renotify: {
     label: "Remind again every (minutes)", placeholder: "e.g. 30",
     hint: "While the monitor is still down, the same channels are reminded every few minutes — so a long outage is not forgotten once the first message scrolls away. Stops when the monitor recovers or its escalation is acknowledged. Leave empty to notify once.",
-    every: "Reminded every {n} minutes",
+    every: "reminded every {n} minutes", sent: "{n} reminders sent",
   },
   incident: {
     updates: "Updates for users", addUpdate: "Post an update",

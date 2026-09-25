@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Globe, Plus, Trash2, Pencil, ExternalLink, X, Copy } from "lucide-react";
+import { Globe, Plus, Trash2, Pencil, ExternalLink, X, Copy, Rss } from "lucide-react";
 import clsx from "clsx";
 import { api } from "../lib/api.js";
 import { useMonitors } from "../lib/monitors.jsx";
@@ -74,9 +74,23 @@ export default function StatusPages() {
                   {p.title}
                   {!p.published && <span className="text-[10px] uppercase tracking-wider text-muted border border-border rounded px-1.5">{t("common.draft")}</span>}
                 </p>
-                <a href={`/status/${p.slug}`} target="_blank" rel="noreferrer" className="text-xs text-muted font-mono hover:text-accent inline-flex items-center gap-1 mt-1">
-                  /status/{p.slug} <ExternalLink size={11} />
-                </a>
+                <span className="flex items-center gap-3 flex-wrap">
+                  <a href={`/status/${p.slug}`} target="_blank" rel="noreferrer" className="text-xs text-muted font-mono hover:text-accent inline-flex items-center gap-1 mt-1">
+                    /status/{p.slug} <ExternalLink size={11} />
+                  </a>
+                  {/* Feed hanya ada bila halaman ini memang menampilkan incident */}
+                  {p.show_incidents && (
+                    <a
+                      href={`/api/public/status/${p.slug}/feed.xml`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-xs text-muted hover:text-accent inline-flex items-center gap-1 mt-1"
+                      title={t("pages.feedHint")}
+                    >
+                      <Rss size={11} /> {t("pages.feed")}
+                    </a>
+                  )}
+                </span>
                 {p.custom_domain && <p className="text-xs text-muted font-mono mt-0.5">{p.custom_domain}</p>}
                 <p className="text-xs text-muted mt-2">
                   {t("monitors.count", { n: p.monitor_ids.length })}

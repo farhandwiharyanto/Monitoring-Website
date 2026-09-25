@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Download, Languages, Moon, Sun, Laptop, Check, Activity } from "lucide-react";
+import { Download, Languages, Moon, Sun, Laptop, Check, Activity, Database, Server, Crown } from "lucide-react";
 import clsx from "clsx";
 import { api, download, setToken } from "../lib/api.js";
 import { useI18n, LANGUAGES } from "../lib/i18n.jsx";
@@ -24,7 +24,25 @@ export default function Settings() {
   const weekAgo = new Date(Date.now() - 7 * 86400_000).toISOString().slice(0, 10);
   const [range, setRange] = useState({ monitorId: "", from: weekAgo, to: today });
 
+  const [health, setHealth] = useState(null);
+
   useEffect(() => { api("/monitors").then(setMonitors).catch(() => {}); }, []);
+
+  // Status sistem: satu-satunya tempat keadaan database, lokasi, dan
+  // kepemimpinan scheduler terlihat tanpa membaca log container.
+  // Endpoint-nya membalas 503 saat database tidak menjawab, jadi kegagalannya
+  // ikut ditangkap sebagai "tidak sehat", bukan sekadar error jaringan.
+  useEffect(() => {
+    if (!isAdmin) return;
+    let batal = false;
+    const muat = () =>
+      api("/health")
+        .then((d) => !batal && setHealth(d))
+        .catch(() => !batal && setHealth({ ok: false, database: { ok: false } }));
+    muat();
+    const timer = setInterval(muat, 30_000);
+    return () => { batal = true; clearInterval(timer); };
+  }, [isAdmin]);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -59,6 +77,42 @@ export default function Settings() {
         <h1 className="text-2xl font-semibold text-fg">{t("settings.title")}</h1>
         <p className="text-sm text-muted mt-1">{t("settings.subtitle")}</p>
       </div>
+
+      {isAdmin && health && (
+        <div className="card p-5">
+          <h2 className="font-medium text-fg mb-1">{t("system.title")}</h2>
+          <p className="text-xs text-muted mb-4">{t("system.hint")}</p>
+          <div className="grid sm:grid-cols-3 gap-3">
+            <div className="rounded-lg border border-border p-3">
+              <p className="text-xs text-muted flex items-center gap-1.5"><Database size={13} /> {t("system.database")}</p>
+              <p className={clsx("text-sm font-medium mt-1", health.database?.ok ? "text-up" : "text-down")}>
+                {health.database?.ok ? t("system.ok") : t("system.failed")}
+              </p>
+              <p className="text-xs text-muted mt-0.5">
+                {health.database?.ok ? t("system.latency", { ms: health.database.latency_ms }) : health.database?.error || "—"}
+              </p>
+            </div>
+
+            <div className="rounded-lg border border-border p-3">
+              <p className="text-xs text-muted flex items-center gap-1.5"><Server size={13} /> {t("system.location")}</p>
+              <p className="text-sm font-medium mt-1 text-fg font-mono">{health.location || "—"}</p>
+              <p className="text-xs text-muted mt-0.5">{t("system.locationHint")}</p>
+            </div>
+
+            <div className="rounded-lg border border-border p-3">
+              <p className="text-xs text-muted flex items-center gap-1.5"><Crown size={13} /> {t("system.scheduler")}</p>
+              <p className={clsx("text-sm font-medium mt-1", health.scheduler?.leading ? "text-up" : "text-fg2")}>
+                {health.scheduler?.leading ? t("system.leading") : t("system.standby")}
+              </p>
+              {/* Pengenal proses berguna saat beberapa instance berbagi lokasi:
+                  ia menjawab "proses mana yang sebenarnya menjalankan check" */}
+              <p className="text-xs text-muted mt-0.5 font-mono truncate" title={health.scheduler?.holder}>
+                {health.scheduler?.holder || "—"}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       <section className="card p-6 space-y-5">
         <h2 className="font-medium text-fg flex items-center gap-2"><Languages size={16} className="text-accent" /> {t("settings.appearance")}</h2>

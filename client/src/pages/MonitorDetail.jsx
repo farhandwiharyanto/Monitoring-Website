@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Pencil, Trash2, Pause, Play, ArrowLeft, ExternalLink, Wrench, Plus, ShieldCheck, ShieldAlert, RefreshCw, Copy, Download, Webhook, Globe2, CheckCircle2, XCircle, AlertTriangle, Zap, Bot, MessageSquarePlus, X, Network, Target, Siren, HandHeart } from "lucide-react";
 import clsx from "clsx";
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
+import { AreaChart, Area, Line, ComposedChart, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { api, download } from "../lib/api.js";
 import { getSocket } from "../lib/socket.js";
 import { useMonitors } from "../lib/monitors.jsx";
@@ -33,6 +33,10 @@ export default function MonitorDetail() {
   const [incidents, setIncidents] = useState([]);
   const [events, setEvents] = useState([]);
   const [hours, setHours] = useState(24);
+  // Grafik harian dibaca dari tabel ringkasan, bukan heartbeat mentah, jadi
+  // rentangnya tidak terbatas pada retensi heartbeat.
+  const [daily, setDaily] = useState([]);
+  const [dailyDays, setDailyDays] = useState(90);
   // Grafik & tabel mengikuti lokasi terpilih; "" berarti lokasi primary (bawaan)
   const [locationView, setLocationView] = useState("");
   const [error, setError] = useState("");
@@ -91,6 +95,14 @@ export default function MonitorDetail() {
   // Incident yang masih berjalan dan punya rantai eskalasi — hanya satu yang
   // mungkin terbuka sekaligus, jadi cukup diambil yang pertama.
   const openEscalation = incidents.find((i) => !i.resolved_at && i.escalation) || null;
+
+  useEffect(() => {
+    let batal = false;
+    api(`/monitors/${id}/daily?days=${dailyDays}`)
+      .then((rows) => !batal && setDaily(rows))
+      .catch(() => !batal && setDaily([]));
+    return () => { batal = true; };
+  }, [id, dailyDays]);
 
   const chartData = useMemo(
     () => beats.map((b) => ({ t: parseDate(b.created_at).getTime(), ms: b.status === 1 ? b.response_time : null, status: b.status, msg: (b.maintenance ? "[maintenance] " : "") + (b.message || "") })),
@@ -450,14 +462,19 @@ export default function MonitorDetail() {
         <StatCard
           label={t("detail.lastResponse")}
           value={fmtMs(monitor.last_response_time)}
+          // Ambang dan p95 dua hal berbeda: yang satu janji, yang satu
+          // kenyataan. Keduanya ditampilkan bila sama-sama ada.
           sub={
-            monitor.latency_threshold_ms
-              ? monitor.last_degraded
-                ? t("latency.over", { ms: monitor.last_response_time, threshold: monitor.latency_threshold_ms })
-                : t("latency.threshold", { ms: monitor.latency_threshold_ms })
-              : monitor.p95_response_24h
-                ? t("detail.p95", { ms: monitor.p95_response_24h })
-                : undefined
+            [
+              monitor.latency_threshold_ms
+                ? monitor.last_degraded
+                  ? t("latency.over", { ms: monitor.last_response_time, threshold: monitor.latency_threshold_ms })
+                  : t("latency.threshold", { ms: monitor.latency_threshold_ms })
+                : null,
+              monitor.p95_response_24h ? t("detail.p95", { ms: monitor.p95_response_24h }) : null,
+            ]
+              .filter(Boolean)
+              .join(" · ") || undefined
           }
           tone={monitor.status === 0 ? "text-down" : monitor.last_degraded ? "text-degraded" : "text-accent"}
         />
@@ -513,6 +530,76 @@ export default function MonitorDetail() {
         </div>
       </div>
 
+      {/* Riwayat harian dibaca dari tabel ringkasan, bukan heartbeat mentah:
+          heartbeat dipangkas setelah masa retensinya, ringkasannya tidak. */}
+      <div className="card p-5">
+        <div className="flex items-center justify-between mb-1 gap-3 flex-wrap">
+          <h2 className="font-medium text-fg">{t("daily.title")}</h2>
+          <div className="flex gap-1">
+            {[30, 90, 365].map((d) => (
+              <button
+                key={d}
+                onClick={() => setDailyDays(d)}
+                className={clsx("px-2.5 py-1 rounded-md text-xs", dailyDays === d ? "bg-accent/15 text-accent" : "text-muted hover:text-fg")}
+              >
+                {t(d === 365 ? "daily.range365" : "daily.rangeDays", { n: d })}
+              </button>
+            ))}
+          </div>
+        </div>
+        <p className="text-xs text-muted mb-4">{t("daily.hint")}</p>
+        <div className="h-56">
+          {daily.length === 0 ? (
+            <p className="h-full grid place-items-center text-sm text-muted">{t("daily.empty")}</p>
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={daily} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="dailyAvg" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={chart.accent} stopOpacity={0.3} />
+                    <stop offset="100%" stopColor={chart.accent} stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid stroke={chart.grid} strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="day" stroke={chart.grid} tick={{ fill: chart.axis, fontSize: 11 }} tickLine={false} axisLine={false} minTickGap={30} />
+                <YAxis stroke={chart.grid} tick={{ fill: chart.axis, fontSize: 11 }} tickLine={false} axisLine={false} width={56} tickFormatter={(v) => `${v} ms`} />
+                <Tooltip
+                  contentStyle={{ background: chart.tooltipBg, border: `1px solid ${chart.tooltipBorder}`, borderRadius: 8, fontSize: 12 }}
+                  labelStyle={{ color: chart.axis }}
+                  content={({ active, payload, label }) => {
+                    if (!active || !payload?.length) return null;
+                    const d = payload[0].payload;
+                    return (
+                      <div style={{ background: chart.tooltipBg, border: `1px solid ${chart.tooltipBorder}` }} className="rounded-lg px-3 py-2 text-xs space-y-0.5">
+                        <p className="text-fg font-medium">{label}</p>
+                        <p className="text-muted">{t("daily.p95")}: <span className="text-fg">{d.p95_ms ?? "—"} ms</span></p>
+                        <p className="text-muted">{t("daily.avg")}: <span className="text-fg">{d.avg_ms ?? "—"} ms</span></p>
+                        <p className="text-muted">{t("daily.minMax", { min: d.min_ms ?? "—", max: d.max_ms ?? "—" })}</p>
+                        <p className="text-muted">{t("daily.uptime")}: <span className="text-fg">{d.uptime == null ? "—" : `${d.uptime}%`}</span></p>
+                        {d.degraded > 0 && <p className="text-degraded">{t("daily.degradedBeats", { n: d.degraded })}</p>}
+                      </div>
+                    );
+                  }}
+                />
+                <Area type="monotone" dataKey="avg_ms" stroke={chart.accent} strokeWidth={1.5} fill="url(#dailyAvg)" connectNulls dot={daily.length < 3} isAnimationActive={false} />
+                {/* p95 digambar sebagai garis terpisah di atas rata-rata: selisih
+                    keduanya persis yang tidak terlihat kalau hanya memakai rata-rata */}
+                <Line type="monotone" dataKey="p95_ms" stroke="rgb(var(--c-degraded))" strokeWidth={2} connectNulls dot={daily.length < 3} isAnimationActive={false} />
+              </ComposedChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+        {daily.length > 0 && (
+          <div className="flex items-center gap-4 mt-3 text-xs text-muted flex-wrap">
+            <span className="flex items-center gap-1.5"><span className="h-2 w-4 rounded-sm bg-accent/60" /> {t("daily.avg")}</span>
+            <span className="flex items-center gap-1.5"><span className="h-0.5 w-4 rounded-sm bg-degraded" /> {t("daily.p95")}</span>
+            {/* Satu atau dua hari data tidak membentuk garis, hanya titik.
+                Tanpa keterangan ini grafiknya terbaca seperti sedang rusak. */}
+            {daily.length < 3 && <span className="text-fg3">{t("daily.young", { n: daily.length })}</span>}
+          </div>
+        )}
+      </div>
+
       <div className="grid lg:grid-cols-2 gap-4">
         <div className="card">
           <div className="flex items-center justify-between px-5 py-4 border-b border-border">
@@ -542,6 +629,15 @@ export default function MonitorDetail() {
                         <p className="text-[11px] text-muted mt-0.5 inline-flex items-center gap-1">
                           <Network size={11} />
                           {inc.suppressed_by?.name ? t("dep.suppressedBy", { parent: inc.suppressed_by.name }) : t("dep.suppressedIncident")}
+                        </p>
+                      )}
+                      {/* Pengingat hanya berjalan selama incident belum selesai,
+                          jadi ditampilkan di baris incident-nya sendiri */}
+                      {inc.renotify_count > 0 && (
+                        <p className="text-[11px] text-muted mt-0.5 inline-flex items-center gap-1">
+                          <Siren size={11} />
+                          {t("renotify.sent", { n: inc.renotify_count })}
+                          {!inc.resolved_at && monitor.renotify_minutes ? ` · ${t("renotify.every", { n: monitor.renotify_minutes })}` : ""}
                         </p>
                       )}
                       {inc.escalation && (

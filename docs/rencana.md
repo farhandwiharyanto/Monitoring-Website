@@ -44,10 +44,6 @@ riwayat pengiriman notifikasi yang menjaganya.
 
 ### Fitur berikutnya
 
-- **Grafik dari ringkasan harian.** Tabel `heartbeat_daily` dan endpoint
-  `/api/monitors/:id/daily` sudah ada dan terisi, tapi belum ada grafik yang
-  memakainya — halaman detail masih menggambar dari heartbeat mentah, jadi
-  rentangnya tetap terbatas pada retensi heartbeat.
 - **2FA (TOTP).** Aplikasi ini memegang kredensial monitor terenkripsi dan URL
   webhook, tapi login hanya password + rate limit.
 
@@ -77,11 +73,17 @@ datanya. Itu pernah terjadi sekali saat Phase 9 dikerjakan.
 ## Utang teknis yang diketahui
 
 1. **Beberapa halaman belum diperiksa secara visual di browser.** Halaman
-   Laporan, Audit log, dan tambahan Phase 8 di halaman Notifikasi (chip status,
-   banner channel gagal, panel riwayat) lolos build dan datanya sudah diperiksa
-   lewat API, tapi tata letaknya belum pernah dilihat. Halaman Phase 7 (On-call,
-   kartu eskalasi, kontak on-call di Users, field policy di form monitor) sudah
-   diperiksa di Chrome, termasuk lebar ponsel.
+   Laporan dan Audit log lolos build dan datanya benar, tapi tata letaknya belum
+   pernah dilihat. Begitu pula form monitor untuk tipe database/gRPC/Kafka dan
+   status page publik dengan banner degraded. Sudah diperiksa di Chrome: halaman
+   Phase 7 (On-call, kartu eskalasi, kontak on-call, field policy), halaman
+   Notifikasi beserta banner channel gagal, detail monitor dengan badge degraded
+   dan grafik riwayat harian, serta panel Status sistem di Pengaturan.
+
+   Cara memotret tanpa membuka browser sendiri: jalankan Chrome dengan
+   `--headless=new --remote-debugging-port=9222`, suntikkan token login ke
+   `localStorage` dengan kunci `pulsewatch_token` lewat `Runtime.evaluate`, lalu
+   `Page.captureScreenshot` dengan `captureBeyondViewport: true`.
 2. **`dependencyInfo()` membaca seluruh tabel monitor tiap kali monitor
    di-decorate**, termasuk pada tiap siaran heartbeat. Murah selama jumlah
    monitor puluhan; perlu ditinjau ulang kalau nanti ratusan.
