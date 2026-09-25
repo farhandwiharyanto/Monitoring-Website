@@ -180,6 +180,15 @@ function cleanCheckConfig(body, type, errors) {
     if (input.grpc_tls === false) out.grpc_tls = false;
     return Object.keys(out).length ? out : null;
   }
+  if (type === "kafka") {
+    const brokers = String(input.kafka_brokers ?? "").trim();
+    if (!brokers) errors.push("Daftar broker Kafka wajib diisi (host:port, dipisah koma)");
+    else out.kafka_brokers = brokers.slice(0, 500);
+    const topic = String(input.kafka_topic ?? "").trim();
+    if (topic) out.kafka_topic = topic.slice(0, 250);
+    if (input.kafka_ssl === true) out.kafka_ssl = true;
+    return Object.keys(out).length ? out : null;
+  }
   if (type === "postgres" || type === "mysql") {
     const query = String(input.query ?? "").trim();
     if (query) {
@@ -288,8 +297,8 @@ function validate(body, existing = null) {
     const conn = resolveConnSecret(body, existing, m.type, errors);
     if (conn !== undefined) m.conn_secret = conn;
     m.check_config = cleanCheckConfig(body, m.type, errors);
-  } else if (m.type === "grpc") {
-    // gRPC memakai hostname/port biasa; yang khusus hanya opsinya
+  } else if (m.type === "grpc" || m.type === "kafka") {
+    // Keduanya memakai alamat biasa; yang khusus hanya opsinya
     m.conn_secret = null;
     m.check_config = cleanCheckConfig(body, m.type, errors);
   } else {
@@ -318,6 +327,8 @@ function validate(body, existing = null) {
     // Tidak butuh target: heartbeat datang dari luar
   } else if (DATABASE_TYPES.includes(m.type)) {
     // Targetnya ada di dalam connection string, bukan di field hostname
+  } else if (m.type === "kafka") {
+    // Targetnya daftar broker di check_config, bukan satu hostname
   } else if (!m.hostname) {
     errors.push("Hostname wajib diisi");
   }

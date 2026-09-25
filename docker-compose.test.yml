@@ -32,3 +32,26 @@ services:
   test-redis:
     image: redis:7-alpine
     ports: ["56379:6379"]
+
+  # Kafka mode KRaft (tanpa ZooKeeper). Butuh ~20 detik sampai siap menerima
+  # koneksi, jauh lebih lama dari target uji lainnya.
+  test-kafka:
+    image: apache/kafka:3.8.0
+    # Port host dan port dalam container dibuat sama, dan listener-nya dua:
+    # satu untuk perkakas di dalam container, satu yang dikabarkan ke klien di
+    # host. Kafka mengabarkan alamatnya sendiri ke klien, jadi satu listener
+    # saja selalu salah untuk salah satu pihak.
+    ports: ["59092:59092"]
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,EXTERNAL://0.0.0.0:59092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,EXTERNAL://127.0.0.1:59092
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"

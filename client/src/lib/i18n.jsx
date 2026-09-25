@@ -80,6 +80,11 @@ const id = {
     tooltipResponse: "Respons",
   },
   form: {
+    typeKafka: "Kafka", typeKafkaDesc: "Periksa metadata cluster dan topik",
+    kafkaBrokers: "Broker", kafkaBrokersHint: "host:port, dipisah koma.",
+    kafkaTopic: "Topik (opsional)",
+    kafkaTopicHint: "Bila diisi, topik harus ada dan semua partisinya punya leader.",
+    kafkaSsl: "Pakai TLS",
     typeGrpc: "gRPC", typeGrpcDesc: "Tanya health service standar gRPC",
     grpcService: "Nama service (opsional)", grpcServicePlaceholder: "mis. myapp.Orders",
     grpcServiceHint: "Kosong = kesehatan server secara keseluruhan.",
@@ -444,6 +449,11 @@ const en = {
     tooltipResponse: "Response",
   },
   form: {
+    typeKafka: "Kafka", typeKafkaDesc: "Check cluster metadata and topic",
+    kafkaBrokers: "Brokers", kafkaBrokersHint: "host:port, comma separated.",
+    kafkaTopic: "Topic (optional)",
+    kafkaTopicHint: "If set, the topic must exist and every partition must have a leader.",
+    kafkaSsl: "Use TLS",
     typeGrpc: "gRPC", typeGrpcDesc: "Query the standard gRPC health service",
     grpcService: "Service name (optional)", grpcServicePlaceholder: "e.g. myapp.Orders",
     grpcServiceHint: "Empty = overall server health.",

@@ -202,6 +202,22 @@ Sertifikat TLS tidak divalidasi pada check ini — yang diuji adalah "service in
 menjawab", bukan rantai sertifikatnya, dan sertifikat internal sering tidak
 dikenal. Monitor HTTPS biasa punya pemeriksaan sertifikat tersendiri.
 
+## Monitor Kafka
+
+Diisi daftar broker (`host:port`, dipisah koma) dan, bila perlu, satu topik.
+
+Tanpa topik, yang diperiksa hanya bahwa cluster menjawab dan berapa broker yang
+terdaftar. Dengan topik, topik itu harus ada **dan setiap partisinya harus punya
+leader**. Partisi tanpa leader adalah keadaan yang khas Kafka: cluster-nya
+hidup dan port-nya terbuka, tapi produce dan consume ke partisi itu gagal.
+Monitor TCP biasa tidak akan pernah menangkapnya.
+
+Monitor ini tidak memproduksi maupun mengonsumsi pesan apa pun. Keberadaan topik
+diperiksa lewat `listTopics`, bukan dengan meminta metadata topik itu: pada
+broker dengan `auto.create.topics.enable`, meminta metadata topik yang belum ada
+justru **membuat** topiknya. Monitor tidak boleh mengubah apa pun pada sistem
+yang dipantaunya.
+
 ## Pengingat selama masih down
 
 Isi `renotify_minutes` pada sebuah monitor dan kabar "masih down" diulang ke

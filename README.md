@@ -29,9 +29,10 @@ Sudah termasuk Postgres, dan migration dijalankan otomatis saat start.
 ## Fitur
 
 **Monitoring**
-- HTTP(s), TCP port, Ping, DNS, dan **Push** (cron job melapor sendiri)
+- HTTP(s), TCP port, Ping, DNS, **Push** (cron job melapor sendiri), **database** (PostgreSQL/MySQL/Redis), **gRPC**, dan **Kafka**
 - Interval, timeout, dan retries per monitor
 - Custom header, Basic Auth / Bearer token (tersimpan terenkripsi), dan assertion body JSON
+- Ambang latency per monitor: layanan yang melambat ditandai **degraded**, uptime tidak terpengaruh
 - Sertifikat TLS dipantau otomatis, alert berjenjang 30 / 14 / 7 / 3 hari
 - Pemeriksaan dari beberapa lokasi sekaligus untuk membedakan layanan mati vs jaringan bermasalah
 

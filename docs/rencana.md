@@ -21,6 +21,7 @@ Terakhir diperbarui: 26 September 2026 · commit `1e1d1f8`
 | 8 (fondasi) | Lease scheduler, health cek DB, shutdown rapi, riwayat pengiriman notifikasi, tes unit & CI | `27e5581` `b6355fa` `40f36b2` |
 | 8 (fitur) | Status degraded & ambang latency per monitor | `76ede23` |
 | 8 (fitur) | Pengingat "masih down", feed Atom status page, ringkasan harian & p95 | `1e1d1f8` |
+| 9 | Monitor database (PostgreSQL/MySQL/Redis), gRPC, dan Kafka | `4a2692a` `88b4c4e` |
 
 Polanya: tiap phase jadi dua commit — server dulu, lalu klien & dokumentasi.
 
@@ -50,20 +51,28 @@ riwayat pengiriman notifikasi yang menjaganya.
 - **2FA (TOTP).** Aplikasi ini memegang kredensial monitor terenkripsi dan URL
   webhook, tapi login hanya password + rate limit.
 
-### Phase 9 — Monitor gRPC, Kafka, dan database (sedang–berat)
+### Phase 9 — selesai
 
-Tiga jenis check baru di `server/src/checks/`, masing-masing menambah dependency
-npm (`@grpc/grpc-js`, `kafkajs`, dan driver database). Sebaiknya dikerjakan
-terpisah dari tema lain supaya mudah di-rollback kalau salah satu bermasalah.
+Monitor gRPC, Kafka, dan database (PostgreSQL/MySQL/Redis) sudah ada; lihat
+[monitoring.md](monitoring.md). Target ujinya di `docker-compose.test.yml`.
+
+Catatan lama yang masih berlaku untuk tipe check berikutnya:
 
 Pola yang diikuti: tiap check mengembalikan `{ ok, message, ms }`, didaftarkan di
 `server/src/checks/index.js`, lalu tipe barunya ditambahkan ke `MONITOR_TYPES`
 dan ke daftar `TYPES` di `client/src/pages/MonitorForm.jsx`.
 
-Biaya tersembunyi terbesarnya bukan menulis check-nya, melainkan bahwa ketiganya
-tidak bisa diverifikasi tanpa target uji — broker Kafka, server gRPC, dan tiga
-database sekali pakai. Siapkan `docker-compose.test.yml` untuk itu, kalau tidak
-kodenya masuk tanpa pernah benar-benar dijalankan.
+Sejak Phase 9, `conn_secret` (terenkripsi) dan `check_config` (JSON) sudah ada,
+jadi tipe check baru biasanya tidak perlu migration lagi.
+
+Biaya tersembunyi terbesarnya bukan menulis check-nya, melainkan target uji.
+`docker-compose.test.yml` sudah menyediakan Postgres, MySQL, Redis, dan Kafka —
+tambahkan service baru di sana, jangan menguji dengan tangan.
+
+**Berkas itu wajib punya `name` sendiri.** Tanpa itu Compose memakai nama
+direktori sebagai nama proyek, dan service bernama sama dengan yang ada di
+`docker-compose.yml` akan menggantikan container produksinya beserta volume
+datanya. Itu pernah terjadi sekali saat Phase 9 dikerjakan.
 
 ## Utang teknis yang diketahui
 

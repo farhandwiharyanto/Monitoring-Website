@@ -18,6 +18,7 @@ const TYPES = [
   { v: "mysql", label: "form.typeMysql", desc: "form.typeDbDesc" },
   { v: "redis", label: "form.typeRedis", desc: "form.typeRedisDesc" },
   { v: "grpc", label: "form.typeGrpc", desc: "form.typeGrpcDesc" },
+  { v: "kafka", label: "form.typeKafka", desc: "form.typeKafkaDesc" },
 ];
 
 // Tipe yang targetnya berupa connection string, bukan hostname/URL
@@ -243,6 +244,38 @@ export default function MonitorForm() {
           </div>
         ) : isPush ? (
           <p className="text-sm text-muted">{t("form.pushNoTarget")}</p>
+        ) : form.type === "kafka" ? (
+          <div className="grid md:grid-cols-2 gap-4">
+            <div>
+              <label className="label">{t("form.kafkaBrokers")}</label>
+              <input
+                className="input font-mono"
+                value={form.check_config?.kafka_brokers || ""}
+                onChange={(e) => setForm((f) => ({ ...f, check_config: { ...f.check_config, kafka_brokers: e.target.value } }))}
+                placeholder="broker1:9092, broker2:9092"
+              />
+              <p className="text-xs text-muted mt-1.5">{t("form.kafkaBrokersHint")}</p>
+            </div>
+            <div>
+              <label className="label">{t("form.kafkaTopic")}</label>
+              <input
+                className="input font-mono"
+                value={form.check_config?.kafka_topic || ""}
+                onChange={(e) => setForm((f) => ({ ...f, check_config: { ...f.check_config, kafka_topic: e.target.value } }))}
+                placeholder="pesanan.masuk"
+              />
+              <p className="text-xs text-muted mt-1.5">{t("form.kafkaTopicHint")}</p>
+            </div>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="accent-accent"
+                checked={form.check_config?.kafka_ssl === true}
+                onChange={(e) => setForm((f) => ({ ...f, check_config: { ...f.check_config, kafka_ssl: e.target.checked } }))}
+              />
+              {t("form.kafkaSsl")}
+            </label>
+          </div>
         ) : isDb ? (
           <div className="space-y-4">
             <div>
