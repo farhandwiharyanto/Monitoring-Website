@@ -343,6 +343,7 @@ function Policies({ isAdmin }) {
                     : p.is_default
                       ? t("esc.usedByDefault")
                       : t("esc.usedByNone")}
+                  {p.repeat_times > 0 ? ` · ${t("esc.repeatSummary", { n: p.repeat_times, m: p.repeat_minutes })}` : ""}
                   {p.description ? ` · ${p.description}` : ""}
                 </p>
               </div>

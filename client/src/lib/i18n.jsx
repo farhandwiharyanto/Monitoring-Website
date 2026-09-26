@@ -323,6 +323,9 @@ const id = {
   },
   esc: {
     title: "Escalation policy", subtitle: "Urutan siapa yang dikabari, dan setelah berapa lama",
+    repeatTimes: "Ulangi rantai (kali)", repeatMinutes: "Jeda sebelum mengulang (menit)",
+    repeatHint: "Bila tingkat terakhir lewat tanpa ada yang menangani, rantai dimulai lagi dari tingkat pertama. 0 = tidak diulang.",
+    repeatSummary: "diulang {n}× tiap {m} menit", round: "putaran {n}",
     addPolicy: "Policy baru", policyName: "Nama policy", policiesEmpty: "Belum ada escalation policy.",
     isDefault: "Jadikan policy default",
     isDefaultHint: "Policy default dipakai semua monitor yang tidak memilih policy sendiri. Hanya boleh ada satu.",
@@ -739,6 +742,9 @@ const en = {
   },
   esc: {
     title: "Escalation policies", subtitle: "Who gets told, in what order, and after how long",
+    repeatTimes: "Repeat chain (times)", repeatMinutes: "Wait before repeating (minutes)",
+    repeatHint: "If the last level passes with nobody handling it, the chain starts again from the first level. 0 = no repeat.",
+    repeatSummary: "repeats {n}× every {m} min", round: "round {n}",
     addPolicy: "New policy", policyName: "Policy name", policiesEmpty: "No escalation policy yet.",
     isDefault: "Make this the default policy",
     isDefaultHint: "The default policy applies to every monitor that does not pick its own. Only one can be default.",

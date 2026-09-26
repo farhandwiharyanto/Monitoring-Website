@@ -228,7 +228,7 @@ export async function notifyMonitorEvent(monitor, status, heartbeat, incident) {
 // ke semua channel monitor: ini dikirim ke SATU notifikasi saja — sasaran
 // tingkat itu. Kegagalannya dilempar supaya pemanggil bisa mencatatnya sebagai
 // delivery yang gagal, bukan ditelan diam-diam.
-export async function notifyEscalation(notification, { monitor, incident, level, levelCount, delayMinutes, targetLabel, ackUrl }) {
+export async function notifyEscalation(notification, { monitor, incident, level, levelCount, round = 1, delayMinutes, targetLabel, ackUrl }) {
   const target = monitorTarget(monitor);
   const downSeconds = incident?.started_at
     ? Math.round((Date.now() - new Date(incident.started_at).getTime()) / 1000)
@@ -240,6 +240,7 @@ export async function notifyEscalation(notification, { monitor, incident, level,
     `Penyebab: ${incident?.cause || "-"}\n`;
   if (downSeconds !== null) body += `Sudah down: ${formatDuration(downSeconds)}\n`;
   body += `Tingkat: ${level} dari ${levelCount} (jeda ${delayMinutes} menit)\n`;
+  if (round > 1) body += `Putaran: ${round} — belum ada yang menangani\n`;
   body += `Dikirim ke: ${targetLabel}\n`;
   // Tautan ack menghentikan sisa rantai tanpa perlu login — halamannya masih
   // meminta konfirmasi, jadi pratinjau tautan di aplikasi chat tidak ikut meng-ack.
@@ -256,6 +257,7 @@ export async function notifyEscalation(notification, { monitor, incident, level,
       incident_id: incident?.id ?? null,
       level,
       level_count: levelCount,
+      round,
       delay_minutes: delayMinutes,
       target: targetLabel,
       ack_url: ackUrl || null,

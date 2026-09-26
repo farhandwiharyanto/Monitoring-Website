@@ -213,6 +213,8 @@ const shapePolicy = (p) => ({
   description: p.description,
   is_default: p.is_default,
   active: p.active,
+  repeat_times: p.repeat_times,
+  repeat_minutes: p.repeat_minutes,
   created_at: p.created_at,
   monitor_count: p._count?.monitors ?? 0,
   steps: (p.steps || []).map((s) => ({
@@ -233,6 +235,16 @@ oncallRouter.get("/policies", async (req, res) => {
   res.json(rows.map(shapePolicy));
 });
 
+// Pengulangan rantai: 0–10 kali, jeda 1–1440 menit. Nilai yang tidak dikirim
+// memakai `fallback` (nilai lama saat edit, bawaan saat membuat).
+function repeatFields(body, fallback) {
+  const times = body.repeat_times === undefined ? fallback.repeat_times : Number(body.repeat_times);
+  const minutes = body.repeat_minutes === undefined ? fallback.repeat_minutes : Number(body.repeat_minutes);
+  if (!Number.isInteger(times) || times < 0 || times > 10) return { error: "Jumlah pengulangan harus 0–10" };
+  if (!Number.isInteger(minutes) || minutes < 1 || minutes > 1440) return { error: "Jeda pengulangan harus 1–1440 menit" };
+  return { repeat_times: times, repeat_minutes: minutes };
+}
+
 // Hanya satu policy yang boleh jadi default; menandai yang baru mencabut yang lama
 async function clearOtherDefaults(keepId) {
   await prisma.escalationPolicy.updateMany({
@@ -246,6 +258,8 @@ oncallRouter.post("/policies", requireAdmin, async (req, res) => {
   const name = String(body.name || "").trim();
   const { errors, steps } = await validateSteps(body.steps);
   if (!name) errors.unshift("Nama policy wajib diisi");
+  const repeat = repeatFields(body, { repeat_times: 0, repeat_minutes: 15 });
+  if (repeat.error) errors.push(repeat.error);
   if (errors.length) return res.status(400).json({ error: errors.join(", ") });
 
   const isDefault = !!body.is_default;
@@ -256,6 +270,7 @@ oncallRouter.post("/policies", requireAdmin, async (req, res) => {
       description: body.description ? String(body.description).slice(0, 500) : null,
       is_default: isDefault,
       active: body.active === undefined ? true : !!body.active,
+      ...repeat,
       steps: { create: steps },
     },
     include: policyInclude,
@@ -275,6 +290,8 @@ oncallRouter.put("/policies/:id", requireAdmin, async (req, res) => {
   const body = req.body || {};
   const name = body.name === undefined ? existing.name : String(body.name).trim();
   if (!name) return res.status(400).json({ error: "Nama policy wajib diisi" });
+  const repeat = repeatFields(body, existing);
+  if (repeat.error) return res.status(400).json({ error: repeat.error });
 
   // Daftar tingkat hanya disentuh kalau dikirim
   let steps = null;
@@ -289,6 +306,7 @@ oncallRouter.put("/policies/:id", requireAdmin, async (req, res) => {
     description: body.description === undefined ? existing.description : body.description ? String(body.description).slice(0, 500) : null,
     is_default: body.is_default === undefined ? existing.is_default : !!body.is_default,
     active: body.active === undefined ? existing.active : !!body.active,
+    ...repeat,
   };
   if (data.is_default) await clearOtherDefaults(id);
 

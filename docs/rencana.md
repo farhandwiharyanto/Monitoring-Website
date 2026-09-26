@@ -82,9 +82,6 @@ datanya. Itu pernah terjadi sekali saat Phase 9 dikerjakan.
    kredensial sehingga router-nya admin-only, jadi viewer yang ikut piket tidak
    bisa mengatur kontaknya sendiri. Kalau nanti perlu, jalannya adalah endpoint
    swalayan yang hanya mengembalikan id/nama/tipe notifikasi, bukan config-nya.
-6. **Eskalasi berhenti setelah tingkat terakhir dikirim** (`exhausted`), tidak
-   ada pengulangan rantai. Kalau seluruh tingkat lewat tanpa ada yang menangani,
-   tidak ada lagi yang mengingatkan.
 
 ## Yang perlu dilakukan di instance yang sedang berjalan
 

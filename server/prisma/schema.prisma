@@ -482,6 +482,10 @@ model EscalationPolicy {
   description String?
   is_default  Boolean  @default(false)
   active      Boolean  @default(true)
+  // Setelah tingkat terakhir lewat tanpa ada yang menangani, seluruh rantai
+  // diulang sebanyak repeat_times kali, tiap putaran repeat_minutes kemudian.
+  repeat_times   Int   @default(0)
+  repeat_minutes Int   @default(15)
   created_at  DateTime @default(now())
   updated_at  DateTime @default(now()) @updatedAt
 
@@ -522,6 +526,7 @@ model Escalation {
   monitor_id  Int
   policy_id   Int?
   started_at  DateTime @default(now())
+  round       Int      @default(1) // putaran ke berapa yang sedang berjalan
 
   // Token untuk acknowledge dari pesan notifikasi tanpa login. Hanya berlaku
   // selama rantai belum berhenti.
@@ -550,6 +555,7 @@ model EscalationDelivery {
   id            Int       @id @default(autoincrement())
   escalation_id Int
   step_order    Int
+  round         Int       @default(1)
   delay_minutes Int
   due_at        DateTime
   // pending | sent | failed | skipped | cancelled

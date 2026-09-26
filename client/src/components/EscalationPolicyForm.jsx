@@ -9,7 +9,7 @@ import { useI18n } from "../lib/i18n.jsx";
 export default function EscalationPolicyForm({ initial, schedules, notifications, onClose, onSaved }) {
   const { t } = useI18n();
   const [form, setForm] = useState({
-    name: "", description: "", is_default: false, active: true,
+    name: "", description: "", is_default: false, active: true, repeat_times: 0, repeat_minutes: 15,
     ...initial,
     steps: (initial.steps || []).map((s) => ({
       delay_minutes: s.delay_minutes ?? 0,
@@ -54,6 +54,8 @@ export default function EscalationPolicyForm({ initial, schedules, notifications
       description: form.description || null,
       is_default: !!form.is_default,
       active: !!form.active,
+      repeat_times: Number(form.repeat_times) || 0,
+      repeat_minutes: Number(form.repeat_minutes) || 15,
       steps: form.steps.map((s) => ({
         delay_minutes: Number(s.delay_minutes) || 0,
         target: s.target,
@@ -91,6 +93,20 @@ export default function EscalationPolicyForm({ initial, schedules, notifications
             {t("esc.isDefault")}
           </label>
           <p className="text-xs text-muted mt-1 ml-6">{t("esc.isDefaultHint")}</p>
+        </div>
+
+        <div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="label">{t("esc.repeatTimes")}</label>
+              <input className="input" type="number" min={0} max={10} value={form.repeat_times} onChange={(e) => setForm({ ...form, repeat_times: e.target.value })} />
+            </div>
+            <div>
+              <label className="label">{t("esc.repeatMinutes")}</label>
+              <input className="input" type="number" min={1} max={1440} value={form.repeat_minutes} disabled={!Number(form.repeat_times)} onChange={(e) => setForm({ ...form, repeat_minutes: e.target.value })} />
+            </div>
+          </div>
+          <p className="text-xs text-muted mt-1">{t("esc.repeatHint")}</p>
         </div>
 
         <div className="space-y-2">

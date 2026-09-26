@@ -23,6 +23,11 @@ Contoh policy yang lazim:
 Rantai berhenti saat ada yang meng-acknowledge, saat monitor pulih, saat monitornya
 dijeda, atau saat seluruh tingkat sudah dikirim.
 
+Supaya gangguan yang tak tertangani tidak diam begitu saja, policy bisa **mengulang
+rantai** (0–10 kali). Setelah tingkat terakhir lewat, rantai dimulai lagi dari tingkat
+pertama setelah jeda yang ditentukan (bawaan 15 menit). Putaran ulang memakai isi
+policy saat itu, jadi perubahan policy berlaku mulai putaran berikutnya.
+
 ## Jadwal rotasi
 
 Jadwal berisi **shift bebas per rentang waktu** — bukan rotasi mingguan yang dihitung

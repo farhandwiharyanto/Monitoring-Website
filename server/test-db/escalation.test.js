@@ -166,3 +166,36 @@ test("satu incident hanya punya satu rantai", async () => {
   assert.equal(await startEscalation(monitor, incident), null);
   await settle(first.id);
 });
+
+test("rantai diulang sesuai policy sebelum ditandai habis", async () => {
+  const { monitor, incident } = await setup([{ delay_minutes: 1 }], { policy: { repeat_times: 1, repeat_minutes: 30 } });
+  const esc = await startEscalation(monitor, incident);
+  await settle(esc.id);
+
+  await runDueDeliveries(later(2));
+  let rows = await deliveries(esc.id);
+  assert.deepEqual(rows.map((d) => [d.round, d.status]), [[1, "sent"], [2, "pending"]]);
+  assert.equal((await prisma.escalation.findUnique({ where: { id: esc.id } })).stopped_at, null);
+
+  // Putaran kedua baru jatuh tempo 30 menit + jeda tingkat setelah putaran pertama habis
+  await runDueDeliveries(later(20));
+  assert.equal((await deliveries(esc.id))[1].status, "pending");
+
+  await runDueDeliveries(later(40));
+  rows = await deliveries(esc.id);
+  assert.deepEqual(rows.map((d) => d.status), ["sent", "sent"]);
+  assert.equal(received.at(-1).escalation.round, 2);
+  assert.equal((await prisma.escalation.findUnique({ where: { id: esc.id } })).stopped_reason, "exhausted");
+});
+
+test("acknowledge di tengah pengulangan menghentikan putaran berikutnya", async () => {
+  const { monitor, incident } = await setup([{ delay_minutes: 1 }], { policy: { repeat_times: 3, repeat_minutes: 5 } });
+  const esc = await startEscalation(monitor, incident);
+  await settle(esc.id);
+  await runDueDeliveries(later(2));
+  await acknowledge({ token: esc.ack_token }, "budi");
+  await runDueDeliveries(later(60));
+
+  const rows = await deliveries(esc.id);
+  assert.deepEqual(rows.map((d) => [d.round, d.status]), [[1, "sent"], [2, "cancelled"]]);
+});

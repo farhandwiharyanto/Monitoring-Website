@@ -415,6 +415,7 @@ export default function MonitorDetail() {
                 <span className={clsx("shrink-0 font-medium", l.status === "sent" ? "text-up" : l.status === "failed" ? "text-down" : l.status === "pending" ? "text-accent" : "text-muted")}>
                   {t(`esc.status${l.status.charAt(0).toUpperCase()}${l.status.slice(1)}`)}
                 </span>
+                {l.round > 1 && <span className="text-muted shrink-0">{t("esc.round", { n: l.round })}</span>}
                 <span className="text-muted shrink-0">
                   {l.delay_minutes === 0 ? t("esc.immediately") : t("esc.afterMinutes", { n: l.delay_minutes })}
                 </span>

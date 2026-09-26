@@ -20,7 +20,7 @@ const STOP_REASONS = {
   recovered: "monitor pulih",
   paused: "monitor dijeda",
   resolved: "incident ditutup",
-  exhausted: "seluruh tingkat sudah dikirim",
+  exhausted: "seluruh tingkat & putaran sudah dikirim",
 };
 export const stopReasonText = (r) => STOP_REASONS[r] || r || null;
 
@@ -35,6 +35,22 @@ export async function policyFor(monitor) {
     include: { steps: { orderBy: [{ step_order: "asc" }, { id: "asc" }] } },
   });
   return policy?.steps?.length ? policy : null;
+}
+
+// Satu putaran tingkat, jedanya dihitung dari `base`
+function roundDeliveries(policy, base, round) {
+  return policy.steps.map((step, i) => {
+    const delay = Math.max(0, step.delay_minutes || 0);
+    return {
+      round,
+      step_order: i + 1,
+      delay_minutes: delay,
+      due_at: new Date(base + delay * 60_000),
+      target: step.target === "channel" ? "channel" : "oncall",
+      schedule_id: step.target === "channel" ? null : step.schedule_id,
+      notification_id: step.target === "channel" ? step.notification_id : null,
+    };
+  });
 }
 
 // Mulai rantai untuk satu incident. Dipanggil dari alur alert, tepat setelah
@@ -56,19 +72,7 @@ export async function startEscalation(monitor, incident) {
         monitor_id: monitor.id,
         policy_id: policy.id,
         ack_token: newAckToken(),
-        deliveries: {
-          create: policy.steps.map((step, i) => {
-            const delay = Math.max(0, step.delay_minutes || 0);
-            return {
-              step_order: i + 1,
-              delay_minutes: delay,
-              due_at: new Date(base + delay * 60_000),
-              target: step.target === "channel" ? "channel" : "oncall",
-              schedule_id: step.target === "channel" ? null : step.schedule_id,
-              notification_id: step.target === "channel" ? step.notification_id : null,
-            };
-          }),
-        },
+        deliveries: { create: roundDeliveries(policy, base, 1) },
       },
     });
     // Tingkat berjeda 0 menit tidak perlu menunggu tick cron berikutnya
@@ -189,6 +193,7 @@ async function deliverOne(delivery, levelCount) {
       incident: esc.incident,
       level: delivery.step_order,
       levelCount,
+      round: delivery.round,
       delayMinutes: delivery.delay_minutes,
       targetLabel: resolved.label,
       ackUrl: ackUrl(esc.ack_token),
@@ -207,16 +212,38 @@ async function deliverOne(delivery, levelCount) {
   }
 }
 
-// Rantai yang seluruh tingkatnya sudah dijalankan ditandai selesai, supaya tidak
-// ikut terbawa di query "yang masih berjalan" selamanya.
-async function closeExhausted() {
+// Rantai yang seluruh tingkatnya sudah dijalankan diulang dari tingkat pertama
+// bila policy-nya meminta, atau ditandai selesai supaya tidak ikut terbawa di
+// query "yang masih berjalan" selamanya.
+//
+// Berbeda dari saat rantai dibuat, putaran ulang membaca policy yang BERLAKU
+// SEKARANG: kalau admin sudah mengubah atau menonaktifkannya, putaran berikutnya
+// mengikuti perubahan itu.
+async function closeExhausted(now = new Date()) {
   const open = await prisma.escalation.findMany({
     where: { stopped_at: null },
-    select: { id: true, deliveries: { where: { status: "pending" }, select: { id: true }, take: 1 } },
+    select: { id: true, round: true, policy_id: true, deliveries: { where: { status: "pending" }, select: { id: true }, take: 1 } },
   });
-  const done = open.filter((e) => e.deliveries.length === 0).map((e) => e.id);
-  if (!done.length) return;
-  await prisma.escalation.updateMany({ where: { id: { in: done } }, data: { stopped_at: new Date(), stopped_reason: "exhausted" } });
+  for (const esc of open.filter((e) => e.deliveries.length === 0)) {
+    const policy = esc.policy_id
+      ? await prisma.escalationPolicy.findFirst({
+          where: { id: esc.policy_id, active: true },
+          include: { steps: { orderBy: [{ step_order: "asc" }, { id: "asc" }] } },
+        })
+      : null;
+    if (policy?.steps.length && esc.round <= policy.repeat_times) {
+      const round = esc.round + 1;
+      const base = now.getTime() + Math.max(1, policy.repeat_minutes) * 60_000;
+      // Bersyarat pada putaran lama supaya dua proses tidak sama-sama menambah putaran
+      const { count } = await prisma.escalation.updateMany({ where: { id: esc.id, round: esc.round, stopped_at: null }, data: { round } });
+      if (count) {
+        await prisma.escalationDelivery.createMany({ data: roundDeliveries(policy, base, round).map((d) => ({ ...d, escalation_id: esc.id })) });
+        console.log(`[escalation] #${esc.id} diulang: putaran ${round}`);
+      }
+      continue;
+    }
+    await prisma.escalation.updateMany({ where: { id: esc.id, stopped_at: null }, data: { stopped_at: now, stopped_reason: "exhausted" } });
+  }
 }
 
 // Satu putaran tidak boleh tumpang tindih dengan putaran sebelumnya: pengiriman
@@ -242,18 +269,19 @@ export async function runDueDeliveries(now = new Date()) {
       take: 50,
     });
 
-    // Jumlah tingkat per rantai untuk teks "tingkat 2/3" di pesan
+    // Jumlah tingkat per putaran untuk teks "tingkat 2/3" di pesan
     const counts = new Map();
-    for (const id of new Set(due.map((d) => d.escalation_id))) {
-      counts.set(id, await prisma.escalationDelivery.count({ where: { escalation_id: id } }));
+    for (const key of new Set(due.map((d) => `${d.escalation_id}:${d.round}`))) {
+      const [id, round] = key.split(":").map(Number);
+      counts.set(key, await prisma.escalationDelivery.count({ where: { escalation_id: id, round } }));
     }
 
     for (const d of due) {
-      await deliverOne(d, counts.get(d.escalation_id) || d.step_order).catch((e) =>
+      await deliverOne(d, counts.get(`${d.escalation_id}:${d.round}`) || d.step_order).catch((e) =>
         console.error(`[escalation] delivery #${d.id}:`, e)
       );
     }
-    await closeExhausted();
+    await closeExhausted(now);
   } finally {
     running = false;
   }
@@ -264,6 +292,7 @@ export async function runDueDeliveries(now = new Date()) {
 export const shapeDelivery = (d) => ({
   id: d.id,
   level: d.step_order,
+  round: d.round,
   delay_minutes: d.delay_minutes,
   due_at: d.due_at,
   status: d.status,
@@ -283,6 +312,7 @@ export function shapeEscalation(esc) {
     monitor_id: esc.monitor_id,
     policy: esc.policy ? { id: esc.policy.id, name: esc.policy.name } : null,
     started_at: esc.started_at,
+    round: esc.round,
     acknowledged_at: esc.acknowledged_at,
     acknowledged_by: esc.acknowledged_by,
     stopped_at: esc.stopped_at,
@@ -297,7 +327,7 @@ export function shapeEscalation(esc) {
 
 const escalationInclude = {
   policy: { select: { id: true, name: true } },
-  deliveries: { orderBy: [{ step_order: "asc" }] },
+  deliveries: { orderBy: [{ round: "asc" }, { step_order: "asc" }] },
 };
 
 export async function escalationForIncident(incidentId) {
