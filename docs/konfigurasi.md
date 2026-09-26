@@ -13,6 +13,7 @@ Semua opsional kecuali yang ditandai. Daftar lengkap ada di `.env.example`.
 | `JWT_SECRET` | – | **Wajib di production**, minimal 32 karakter acak |
 | `JWT_TTL` | `7d` | Umur token login |
 | `TRUST_PROXY` | `false` | Set `true` di belakang reverse proxy agar rate limit membaca `X-Forwarded-For` |
+| `RATE_LIMIT_STORE` | `memory` | `database` bila beberapa instance berbagi satu Postgres: batas API key, ack, dan push jadi berlaku bersama (satu upsert per permintaan) |
 | `CORS_ORIGINS` | `BASE_URL` | Origin tambahan yang boleh memanggil API ber-auth (dipisah koma) |
 | `LOGIN_MAX_ATTEMPTS` / `LOGIN_WINDOW_SECONDS` / `LOGIN_LOCK_SECONDS` | `8` / `300` / `900` | Rate limit login |
 | `CERT_ALERT_THRESHOLDS` | `30,14,7,3` | Ambang alert sertifikat (hari); satu alert per ambang yang dilewati |

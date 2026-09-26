@@ -654,3 +654,16 @@ model SchedulerLease {
 
   @@map("scheduler_leases")
 }
+
+// Penghitung rate limit bersama antar-instance (RATE_LIMIT_STORE=database).
+// Jendela tetap per kunci; baris yang lewat expires_at dibersihkan berkala.
+model RateLimit {
+  key          String
+  window_start DateTime @db.Timestamptz(3)
+  expires_at   DateTime @db.Timestamptz(3)
+  count        Int      @default(0)
+
+  @@id([key, window_start])
+  @@index([expires_at])
+  @@map("rate_limits")
+}

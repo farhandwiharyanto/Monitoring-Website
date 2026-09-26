@@ -5,7 +5,7 @@ menjalankannya untuk diuji. Ditulis untuk sesi kerja berikutnya.
 
 [← Kembali ke README](../README.md)
 
-Terakhir diperbarui: 27 September 2026 · commit `39a200a`
+Terakhir diperbarui: 27 September 2026
 
 ## Sudah selesai
 
@@ -24,7 +24,7 @@ Terakhir diperbarui: 27 September 2026 · commit `39a200a`
 | 9 | Monitor database (PostgreSQL/MySQL/Redis), gRPC, dan Kafka | `4a2692a` `88b4c4e` `32d6994` |
 | 10 | Tes database (SLA, dependency, eskalasi) + perbaikan batas rentang SLA | `c642ca6` |
 | 10 | 2FA (TOTP) dengan kode cadangan & reset admin | `0401920` |
-| 10 | Eskalasi berulang, cache dependency, kontak on-call swalayan, cek visual | `e8f83b7` `c223b14` `39a200a` `9a38482` |
+| 10 | Eskalasi berulang, cache dependency, kontak on-call swalayan, cek visual, rate limit bersama | `e8f83b7` `c223b14` `39a200a` `9a38482` + commit ini |
 
 Polanya: tiap phase jadi dua commit — server dulu, lalu klien & dokumentasi.
 
@@ -62,13 +62,6 @@ datanya. Itu pernah terjadi sekali saat Phase 9 dikerjakan.
 1. **Penulisan audit log tidak menahan respons API.** Kalau database tumbang di
    antara tindakan dan pencatatannya, tindakan bisa berhasil tanpa jejak. Ini
    pertukaran yang disengaja, dicatat di [audit-log.md](audit-log.md).
-2. **Rate limit API key dihitung per proses**, jadi perlu ditinjau bila instance
-   kelak direplikasi. Berlaku juga untuk rate limit endpoint ack. (Duplikasi
-   *check* saat direplikasi sudah tidak jadi masalah sejak lease scheduler,
-   tapi rate limit tetap hidup sendiri-sendiri di tiap proses.) Sengaja belum
-   dikerjakan selama instance masih satu: memindahkannya ke database berarti
-   satu tulisan tambahan per permintaan API.
-
 ## Yang perlu dilakukan di instance yang sedang berjalan
 
 Container produksi yang dibangun sebelum Phase 8 **tidak otomatis ikut berubah**

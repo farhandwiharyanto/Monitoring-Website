@@ -1,6 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { prisma } from "../db.js";
 import { config } from "../config.js";
+import { hitLimit } from "./ratelimit.js";
 
 // Kunci berbentuk pw_<64 hex> — awalan memudahkan membedakannya dari JWT
 // saat dikirim lewat header Authorization: Bearer <...>.
@@ -51,32 +52,9 @@ export async function resolveApiKey(token) {
   return row;
 }
 
-// --- Rate limit per kunci (jendela geser in-memory) ---
-const hits = new Map(); // apiKeyId -> number[]
-
-export function rateLimitApiKey(apiKeyId) {
-  const now = Date.now();
-  const windowMs = config.apiKeyWindowSeconds * 1000;
-  const arr = (hits.get(apiKeyId) || []).filter((t) => now - t < windowMs);
-  if (arr.length >= config.apiKeyMaxRequests) {
-    hits.set(apiKeyId, arr);
-    const retryAfter = Math.ceil((windowMs - (now - arr[0])) / 1000);
-    return { allowed: false, retryAfter, remaining: 0 };
-  }
-  arr.push(now);
-  hits.set(apiKeyId, arr);
-  return { allowed: true, remaining: config.apiKeyMaxRequests - arr.length };
-}
-
-// Bersihkan jendela yang sudah lewat agar Map tidak tumbuh terus
-setInterval(() => {
-  const cutoff = Date.now() - config.apiKeyWindowSeconds * 1000;
-  for (const [id, arr] of hits) {
-    const kept = arr.filter((t) => t > cutoff);
-    if (kept.length) hits.set(id, kept);
-    else hits.delete(id);
-  }
-}, 60_000).unref?.();
+// Rate limit per kunci — penyimpanannya mengikuti RATE_LIMIT_STORE (lib/ratelimit.js)
+export const rateLimitApiKey = (apiKeyId) =>
+  hitLimit(`apikey:${apiKeyId}`, { max: config.apiKeyMaxRequests, windowSeconds: config.apiKeyWindowSeconds });
 
 // Tampilan aman untuk API: tidak pernah menyertakan hash maupun kunci asli
 export const publicApiKey = (k) => ({

@@ -69,7 +69,7 @@ export async function requireAuth(req, res, next) {
       return res.status(403).json({ error: "API key ini read-only" });
     }
 
-    const limit = rateLimitApiKey(apiKey.id);
+    const limit = await rateLimitApiKey(apiKey.id);
     res.set("X-RateLimit-Limit", String(config.apiKeyMaxRequests));
     res.set("X-RateLimit-Remaining", String(Math.max(0, limit.remaining)));
     if (!limit.allowed) {

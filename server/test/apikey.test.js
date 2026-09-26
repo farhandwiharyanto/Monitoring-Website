@@ -32,19 +32,19 @@ test("publicApiKey tidak pernah membocorkan hash", () => {
   assert.equal(publicApiKey({ revoked_at: new Date() }).active, false);
 });
 
-test("rate limit menolak setelah kuota habis dan menyebut waktu tunggu", () => {
+test("rate limit menolak setelah kuota habis dan menyebut waktu tunggu", async () => {
   const id = 987654; // id khusus tes, jendelanya terpisah dari yang lain
   for (let i = 0; i < config.apiKeyMaxRequests; i++) {
-    assert.equal(rateLimitApiKey(id).allowed, true, `permintaan ke-${i + 1} seharusnya lolos`);
+    assert.equal((await rateLimitApiKey(id)).allowed, true, `permintaan ke-${i + 1} seharusnya lolos`);
   }
-  const blocked = rateLimitApiKey(id);
+  const blocked = await rateLimitApiKey(id);
   assert.equal(blocked.allowed, false);
   assert.equal(blocked.remaining, 0);
   assert.ok(blocked.retryAfter > 0, "harus memberi tahu kapan boleh mencoba lagi");
 });
 
-test("sisa kuota berkurang satu per satu", () => {
+test("sisa kuota berkurang satu per satu", async () => {
   const id = 987655;
-  assert.equal(rateLimitApiKey(id).remaining, config.apiKeyMaxRequests - 1);
-  assert.equal(rateLimitApiKey(id).remaining, config.apiKeyMaxRequests - 2);
+  assert.equal((await rateLimitApiKey(id)).remaining, config.apiKeyMaxRequests - 1);
+  assert.equal((await rateLimitApiKey(id)).remaining, config.apiKeyMaxRequests - 2);
 });

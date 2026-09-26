@@ -67,6 +67,9 @@ export const config = {
   // Rate limit per kunci: batas request per jendela waktu
   apiKeyMaxRequests: Number(process.env.API_KEY_RATE_LIMIT || 60),
   apiKeyWindowSeconds: Number(process.env.API_KEY_RATE_WINDOW_SECONDS || 60),
+  // memory (bawaan) | database. Pakai database bila beberapa instance berbagi
+  // satu Postgres, supaya batas API key, ack, dan push berlaku bersama.
+  rateLimitStore: process.env.RATE_LIMIT_STORE === "database" ? "database" : "memory",
 
   // --- Webhook automation ---
   // Percobaan pemanggilan webhook aksi (termasuk percobaan pertama)
