@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { prisma, ROLES } from "../db.js";
 import { requireAuth, requireAdmin, publicUser } from "../lib/auth.js";
 import { recordAudit, diffFields } from "../lib/audit.js";
+import { TOTP_OFF } from "../lib/totp.js";
 
 // Manajemen user — admin only
 export const usersRouter = Router();
@@ -70,6 +71,21 @@ usersRouter.put("/:id", async (req, res) => {
         ? `Kontak on-call "${updated.username}" diubah`
         : `User "${updated.username}" diubah`,
     changes: diffFields(user, data),
+  });
+  res.json(publicUser(updated));
+});
+
+// Jalan keluar bagi user yang kehilangan ponsel sekaligus kode cadangannya.
+// Sesinya ikut dibatalkan, jadi ia harus login ulang lalu memasang 2FA lagi.
+usersRouter.post("/:id/2fa/reset", async (req, res) => {
+  const id = Number(req.params.id);
+  const user = await prisma.user.findUnique({ where: { id } });
+  if (!user) return res.status(404).json({ error: "User tidak ditemukan" });
+  if (!user.totp_enabled) return res.status(400).json({ error: "User ini tidak memakai 2FA" });
+  const updated = await prisma.user.update({ where: { id }, data: { ...TOTP_OFF, password_changed_at: new Date() } });
+  recordAudit(req, {
+    action: "user.2fa_reset", entity: "user", entityId: id, entityName: user.username,
+    summary: `2FA "${user.username}" direset admin — sesinya ikut dibatalkan`,
   });
   res.json(publicUser(updated));
 });

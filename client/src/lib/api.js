@@ -12,7 +12,12 @@ export async function api(path, { method = "GET", body, auth = true } = {}) {
     window.dispatchEvent(new Event("pulsewatch:logout"));
   }
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `Request gagal (${res.status})`);
+  if (!res.ok) {
+    const err = new Error(data.error || `Request gagal (${res.status})`);
+    // Isi respons ikut dibawa, mis. `requires_2fa` saat login
+    err.data = data;
+    throw err;
+  }
   return data;
 }
 

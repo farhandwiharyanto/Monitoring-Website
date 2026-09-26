@@ -23,6 +23,7 @@ export const publicUser = (u) => ({
   // Kontak pribadi untuk paging on-call. Hanya id-nya — isi konfigurasinya
   // (token, webhook) tetap tidak pernah keluar dari router notifikasi.
   oncall_notification_id: u.oncall_notification_id ?? null,
+  totp_enabled: !!u.totp_enabled,
 });
 
 // Token yang diterbitkan sebelum password terakhir diganti dianggap batal,

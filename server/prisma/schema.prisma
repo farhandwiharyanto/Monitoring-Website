@@ -20,6 +20,13 @@ model User {
   password_changed_at DateTime @default(now())
   created_at          DateTime @default(now())
 
+  // 2FA (TOTP). Secret disimpan terenkripsi seperti kredensial monitor; kode
+  // cadangan hanya hash-nya. totp_last_step mencegah satu kode dipakai dua kali.
+  totp_secret         String?
+  totp_enabled        Boolean  @default(false)
+  totp_recovery       Json?
+  totp_last_step      Int?
+
   // Kontak pribadi untuk paging on-call (mis. Telegram/ntfy miliknya sendiri).
   // Dipakai saat langkah eskalasi menunjuk jadwal rotasi, bukan channel tim.
   oncall_notification_id Int?

@@ -31,11 +31,6 @@ Urutannya sengaja: fondasi lebih dulu, fitur berikutnya, tipe monitor baru
 paling akhir — supaya saat menambah permukaan baru sudah ada tes, CI, dan
 riwayat pengiriman notifikasi yang menjaganya.
 
-### Fitur berikutnya
-
-- **2FA (TOTP).** Aplikasi ini memegang kredensial monitor terenkripsi dan URL
-  webhook, tapi login hanya password + rate limit.
-
 ### Phase 9 — selesai
 
 Monitor gRPC, Kafka, dan database (PostgreSQL/MySQL/Redis) sudah ada; lihat
@@ -139,7 +134,7 @@ Login `admin` / `admin12345`, lalu ambil token dari `POST /api/auth/login`.
 Tes unit tidak butuh database sama sekali:
 
 ```bash
-cd server && npm test        # 92 tes, ~1 detik
+cd server && npm test        # 97 tes, ~1 detik
 ```
 
 Tes yang menyentuh database (`slaReport`, dependency, rantai eskalasi) ada di
@@ -168,7 +163,7 @@ cd server && npx prisma migrate diff \
   --to-schema-datamodel prisma/schema.prisma --exit-code
 ```
 
-Membandingkan kelengkapan dua kamus i18n (saat ini 582 kunci):
+Membandingkan kelengkapan dua kamus i18n (saat ini 681 kunci):
 
 ```bash
 node scripts/check-i18n.mjs

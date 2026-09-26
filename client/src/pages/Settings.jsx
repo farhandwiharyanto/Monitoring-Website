@@ -7,6 +7,7 @@ import { useTheme, THEMES } from "../lib/theme.jsx";
 import { useAuth } from "../lib/auth.jsx";
 import { reconnectWithToken } from "../lib/socket.js";
 import ApiKeys from "../components/ApiKeys.jsx";
+import TwoFactor from "../components/TwoFactor.jsx";
 
 const THEME_ICONS = { dark: Moon, light: Sun, auto: Laptop };
 const THEME_KEYS = { dark: "settings.themeDark", light: "settings.themeLight", auto: "settings.themeAuto" };
@@ -288,6 +289,8 @@ export default function Settings() {
         {msg && <p className={clsx("text-sm", msg.ok ? "text-up" : "text-down")}>{msg.text}</p>}
         <button className="btn-primary">{t("common.save")}</button>
       </form>
+
+      <TwoFactor />
     </div>
   );
 }

@@ -9,6 +9,8 @@ export default function Login({ onLogin }) {
   const { t } = useI18n();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  // Diisi setelah server menjawab bahwa akun ini memakai 2FA
+  const [code, setCode] = useState(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -16,11 +18,16 @@ export default function Login({ onLogin }) {
     e.preventDefault();
     setBusy(true); setError("");
     try {
-      const { token, user } = await api("/auth/login", { method: "POST", body: { username, password }, auth: false });
+      const { token, user } = await api("/auth/login", { method: "POST", body: { username, password, code: code || undefined }, auth: false });
       setToken(token);
       reconnectWithToken();
       onLogin(user);
     } catch (err) {
+      if (err.data?.requires_2fa && code === null) {
+        setCode("");
+        setError("");
+        return;
+      }
       setError(err.message);
     } finally {
       setBusy(false);
@@ -45,6 +52,13 @@ export default function Login({ onLogin }) {
           <label className="label">{t("login.password")}</label>
           <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
         </div>
+        {code !== null && (
+          <div>
+            <label className="label">{t("twofa.code")}</label>
+            <input className="input font-mono tracking-widest" value={code} onChange={(e) => setCode(e.target.value)} autoFocus autoComplete="one-time-code" placeholder="123456" />
+            <p className="text-xs text-muted mt-1">{t("twofa.loginHint")}</p>
+          </div>
+        )}
         {error && <p className="text-sm text-down">{error}</p>}
         <button className="btn-primary w-full justify-center" disabled={busy}>{busy ? t("login.busy") : t("login.submit")}</button>
         <div className="flex justify-center text-xs text-muted pt-1"><ThemeToggle /></div>

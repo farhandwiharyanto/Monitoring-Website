@@ -48,6 +48,7 @@ Sudah termasuk Postgres, dan migration dijalankan otomatis saat start.
 - Status page publik dengan logo, warna, tema, dan custom domain
 - Incident update manual untuk mengabari pengguna saat gangguan
 - API key read-only / read-write untuk akses dari sistem lain
+- Login dengan 2FA (aplikasi authenticator) dan kode cadangan
 - Export CSV/JSON dan endpoint `/metrics` untuk Prometheus
 - Audit log: jejak siapa mengubah apa, kapan, dan dari IP mana
 - Laporan SLA bulanan: uptime, error budget per target SLO, MTTR, dan ekspornya

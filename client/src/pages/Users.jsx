@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus, Trash2, KeyRound, ShieldCheck, Eye, X, Siren } from "lucide-react";
+import { Plus, Trash2, KeyRound, ShieldCheck, ShieldOff, Eye, X, Siren } from "lucide-react";
 import clsx from "clsx";
 import { api } from "../lib/api.js";
 import { useAuth } from "../lib/auth.jsx";
@@ -34,6 +34,11 @@ export default function Users() {
   const setContact = async (u, value) => {
     try { await api(`/users/${u.id}`, { method: "PUT", body: { oncall_notification_id: value || null } }); load(); }
     catch (err) { alert(err.message); }
+  };
+  // Untuk user yang kehilangan ponsel sekaligus kode cadangannya
+  const reset2fa = async (u) => {
+    if (!confirm(t("users.confirmReset2fa", { username: u.username }))) return;
+    try { await api(`/users/${u.id}/2fa/reset`, { method: "POST" }); load(); } catch (err) { alert(err.message); }
   };
   const remove = async (u) => {
     if (!confirm(t("users.confirmDelete", { username: u.username }))) return;
@@ -79,6 +84,9 @@ export default function Users() {
               <option value="admin">admin</option>
               <option value="viewer">viewer</option>
             </select>
+            {u.totp_enabled && (
+              <button className="btn-ghost !px-2.5" title={t("users.reset2fa")} onClick={() => reset2fa(u)}><ShieldOff size={14} /></button>
+            )}
             <button className="btn-ghost !px-2.5" title={t("users.resetPassword")} onClick={() => { setForm({ id: u.id, username: u.username, password: "" }); setError(""); }}><KeyRound size={14} /></button>
             <button className="btn-danger !px-2.5" disabled={u.id === me.id} onClick={() => remove(u)}><Trash2 size={14} /></button>
           </div>

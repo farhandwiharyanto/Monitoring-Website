@@ -124,6 +124,20 @@ juga menyebut lokasi dan apakah proses ini sedang memimpin scheduler:
 - Socket.io memverifikasi token ke database, dan `push_token` tidak pernah disiarkan lewat socket
 - Pesan error internal tidak dibocorkan ke client saat `NODE_ENV=production`
 
+### 2FA (TOTP)
+Tiap user bisa mengaktifkan 2FA sendiri di **Pengaturan**: password → pindai QR
+dengan aplikasi authenticator → masukkan satu kode. Setelah itu:
+
+- Login meminta kode 6 digit atau salah satu dari 10 kode cadangan (sekali pakai).
+  Kode yang salah ikut dihitung ke rate limit login; kode yang sama tidak bisa dipakai dua kali.
+- Mengaktifkan 2FA membatalkan sesi lain, sama seperti ganti password.
+- Mematikannya butuh password **dan** kode. Kode cadangan bisa dibuat ulang.
+- Kehilangan ponsel sekaligus kode cadangan: admin lain menekan **Reset 2FA** di halaman Users.
+  Kalau yang terkunci satu-satunya admin, matikan langsung di database:
+  `UPDATE users SET totp_enabled=false, totp_secret=NULL, totp_recovery=NULL, totp_last_step=NULL WHERE username='admin';`
+
+Secret disimpan terenkripsi dengan kunci yang sama dengan kredensial monitor; kode cadangan hanya hash-nya.
+
 ## Migrasi dari versi SQLite (v1)
 ```bash
 mkdir -p legacy && cp /path/lama/pulsewatch.db legacy/
