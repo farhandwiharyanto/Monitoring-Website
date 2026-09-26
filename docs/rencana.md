@@ -62,6 +62,7 @@ datanya. Itu pernah terjadi sekali saat Phase 9 dikerjakan.
 1. **Penulisan audit log tidak menahan respons API.** Kalau database tumbang di
    antara tindakan dan pencatatannya, tindakan bisa berhasil tanpa jejak. Ini
    pertukaran yang disengaja, dicatat di [audit-log.md](audit-log.md).
+
 ## Yang perlu dilakukan di instance yang sedang berjalan
 
 Container produksi yang dibangun sebelum Phase 8 **tidak otomatis ikut berubah**
