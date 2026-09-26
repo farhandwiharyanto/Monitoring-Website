@@ -11,7 +11,8 @@
     "db:generate": "prisma generate",
     "db:studio": "prisma studio",
     "migrate:sqlite": "node scripts/migrate-from-sqlite.js",
-    "test": "node --import ./test-setup.mjs --test test/*.test.js"
+    "test": "node --import ./test-setup.mjs --test test/*.test.js",
+    "test:db": "node --import ./test-setup.mjs --test --test-concurrency=1 test-db/*.test.js"
   },
   "dependencies": {
     "@grpc/grpc-js": "^1.14.5",

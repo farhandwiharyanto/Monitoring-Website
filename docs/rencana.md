@@ -31,13 +31,6 @@ Urutannya sengaja: fondasi lebih dulu, fitur berikutnya, tipe monitor baru
 paling akhir — supaya saat menambah permukaan baru sudah ada tes, CI, dan
 riwayat pengiriman notifikasi yang menjaganya.
 
-### Sisa fondasi
-
-- **Tes yang menyentuh database.** Yang ada sekarang hanya logika murni.
-  `slaReport`, `blockingAncestor`, dan rantai eskalasi baru benar-benar teruji
-  bila dijalankan pada Postgres; job `migrations` di CI sudah menyiapkan
-  service Postgres yang bisa dipakai ulang untuk itu.
-
 ### Fitur berikutnya
 
 - **2FA (TOTP).** Aplikasi ini memegang kredensial monitor terenkripsi dan URL
@@ -146,8 +139,20 @@ Login `admin` / `admin12345`, lalu ambil token dari `POST /api/auth/login`.
 Tes unit tidak butuh database sama sekali:
 
 ```bash
-cd server && npm test        # 60 tes, ~1 detik
+cd server && npm test        # 92 tes, ~1 detik
 ```
+
+Tes yang menyentuh database (`slaReport`, dependency, rantai eskalasi) ada di
+`server/test-db/` dan butuh Postgres sungguhan yang sudah di-migrate. Tes itu
+**mengosongkan seluruh tabel**, jadi menolak berjalan kalau nama database-nya
+tidak mengandung `test`:
+
+```bash
+cd server && DATABASE_URL="postgresql://pw:pw@localhost:55432/pwtest" npm run test:db
+```
+
+Tanpa Docker, Postgres dari Homebrew juga cukup: `initdb` ke folder sementara
+(pakai `LC_ALL=C`), lalu `pg_ctl ... -o "-p 55432 -k ''"`.
 
 Isinya logika yang sulit diuji dengan tangan: assertion JSONPath, jendela
 maintenance berulang yang melintasi tengah malam, ambang alert sertifikat,
@@ -169,7 +174,7 @@ Membandingkan kelengkapan dua kamus i18n (saat ini 582 kunci):
 node scripts/check-i18n.mjs
 ```
 
-Ketiganya dijalankan otomatis oleh [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)
+Semuanya dijalankan otomatis oleh [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)
 pada tiap push ke `main` dan tiap pull request.
 
 ## Hal yang gampang terlewat
@@ -179,6 +184,9 @@ pada tiap push ke `main` dan tiap pull request.
   akan sejajar dengan batas periode laporan.
 - Kolom waktu Prisma bertipe `timestamp` tanpa zona berisi UTC, sedangkan `NOW()`
   bertipe `timestamptz`. Di raw SQL, samakan dengan `NOW() AT TIME ZONE 'UTC'`.
+  Parameter `Date` dari JS juga tiba sebagai `timestamptz`: tulis
+  `${d}::timestamptz AT TIME ZONE 'UTC'`, jangan `${d}::timestamp` — yang
+  terakhir bergeser mengikuti zona waktu sesi database.
 - Menambah field monitor berarti menyentuh empat tempat: `schema.prisma`,
   `validate()` di `server/src/routes/monitors.js`, form di
   `client/src/pages/MonitorForm.jsx`, dan kamus i18n (dua bahasa).

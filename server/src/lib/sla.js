@@ -35,15 +35,17 @@ export const monthKey = (date) =>
 // Catatan: kolom waktu Prisma bertipe timestamp tanpa zona dan isinya UTC,
 // sedangkan NOW() bertipe timestamptz. Keduanya disamakan dengan
 // `AT TIME ZONE 'UTC'` supaya incident yang masih berjalan tetap terhitung
-// benar walau timezone server database bukan UTC.
+// benar walau timezone server database bukan UTC. Parameter tanggal dari JS
+// dikirim Prisma sebagai timestamptz; cast langsung ke ::timestamp akan
+// memakai timezone sesi dan menggeser batas rentang, jadi ikut disamakan.
 // Incident yang melewati batas rentang dipotong supaya tidak dihitung berlebih,
 // dan incident yang masih berjalan dipotong di "sekarang".
 async function downtimeMap(from, to, { excludeMaintenance }) {
   const rows = await prisma.$queryRaw`
     SELECT monitor_id,
            SUM(EXTRACT(EPOCH FROM (
-             LEAST(COALESCE(resolved_at, (NOW() AT TIME ZONE 'UTC')), ${to}::timestamp) -
-             GREATEST(started_at, ${from}::timestamp)
+             LEAST(COALESCE(resolved_at, (NOW() AT TIME ZONE 'UTC')), (${to}::timestamptz AT TIME ZONE 'UTC')) -
+             GREATEST(started_at, (${from}::timestamptz AT TIME ZONE 'UTC'))
            )))::float AS down_seconds,
            COUNT(*)::int AS incidents,
            COUNT(*) FILTER (WHERE resolved_at IS NULL)::int AS ongoing,
@@ -51,8 +53,8 @@ async function downtimeMap(from, to, { excludeMaintenance }) {
              FILTER (WHERE resolved_at IS NOT NULL)::float AS mttr_seconds,
            MAX(EXTRACT(EPOCH FROM (COALESCE(resolved_at, (NOW() AT TIME ZONE 'UTC')) - started_at)))::float AS longest_seconds
     FROM incidents
-    WHERE started_at < ${to}::timestamp
-      AND (resolved_at IS NULL OR resolved_at > ${from}::timestamp)
+    WHERE started_at < (${to}::timestamptz AT TIME ZONE 'UTC')
+      AND (resolved_at IS NULL OR resolved_at > (${from}::timestamptz AT TIME ZONE 'UTC'))
       ${excludeMaintenance ? Prisma.sql`AND maintenance = false` : Prisma.empty}
     GROUP BY monitor_id`;
 

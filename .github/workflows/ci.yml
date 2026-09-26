@@ -1,6 +1,6 @@
-# Tiga pemeriksaan yang sebelumnya dijalankan manual dan karena itu sering
-# terlewat: tes logika server, kesejajaran migration dengan schema, dan
-# kelengkapan kamus terjemahan.
+# Pemeriksaan yang sebelumnya dijalankan manual dan karena itu sering
+# terlewat: tes logika server, tes yang menyentuh database, kesejajaran
+# migration dengan schema, dan kelengkapan kamus terjemahan.
 name: CI
 
 on:
@@ -31,7 +31,7 @@ jobs:
         working-directory: server
 
   migrations:
-    name: Migration sejalan dengan schema
+    name: Migration & tes database
     runs-on: ubuntu-latest
     # Migration ditulis tangan (lihat docs/rencana.md: `prisma format` sengaja
     # tidak dipakai), jadi selisih dengan schema hanya ketahuan bila benar-benar
@@ -70,6 +70,13 @@ jobs:
             --from-schema-datasource prisma/schema.prisma \
             --to-schema-datamodel prisma/schema.prisma \
             --exit-code
+        working-directory: server
+      # Zona waktu database sengaja dibuat bukan UTC: kueri SLA pernah menggeser
+      # batas rentang 7 jam pada database WIB, dan itu tidak terlihat di UTC.
+      - name: Zona waktu database bukan UTC
+        run: psql "$DATABASE_URL" -c "ALTER DATABASE pwtest SET timezone TO 'Asia/Jakarta'"
+      - name: Tes database
+        run: npm run test:db
         working-directory: server
 
   client:
