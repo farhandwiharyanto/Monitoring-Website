@@ -5,7 +5,7 @@ menjalankannya untuk diuji. Ditulis untuk sesi kerja berikutnya.
 
 [← Kembali ke README](../README.md)
 
-Terakhir diperbarui: 26 September 2026 · commit `f638ed6`
+Terakhir diperbarui: 27 September 2026 · commit `39a200a`
 
 ## Sudah selesai
 
@@ -22,16 +22,19 @@ Terakhir diperbarui: 26 September 2026 · commit `f638ed6`
 | 8 (fitur) | Status degraded & ambang latency per monitor | `76ede23` |
 | 8 (fitur) | Pengingat "masih down", feed Atom status page, ringkasan harian & p95 | `1e1d1f8` |
 | 9 | Monitor database (PostgreSQL/MySQL/Redis), gRPC, dan Kafka | `4a2692a` `88b4c4e` `32d6994` |
+| 10 | Tes database (SLA, dependency, eskalasi) + perbaikan batas rentang SLA | `c642ca6` |
+| 10 | 2FA (TOTP) dengan kode cadangan & reset admin | `0401920` |
+| 10 | Eskalasi berulang, cache dependency, kontak on-call swalayan, cek visual | `e8f83b7` `c223b14` `39a200a` `9a38482` |
 
 Polanya: tiap phase jadi dua commit — server dulu, lalu klien & dokumentasi.
 
 ## Belum dikerjakan
 
-Urutannya sengaja: fondasi lebih dulu, fitur berikutnya, tipe monitor baru
-paling akhir — supaya saat menambah permukaan baru sudah ada tes, CI, dan
-riwayat pengiriman notifikasi yang menjaganya.
+Tidak ada pekerjaan terencana yang tersisa selain utang teknis di bawah. Kalau
+menambah fitur baru, pertahankan urutan lama: fondasi (tes, CI) lebih dulu, lalu
+fitur, tipe monitor baru paling akhir.
 
-### Phase 9 — selesai
+### Menambah tipe monitor
 
 Monitor gRPC, Kafka, dan database (PostgreSQL/MySQL/Redis) sudah ada; lihat
 [monitoring.md](monitoring.md). Target ujinya di `docker-compose.test.yml`.
@@ -62,11 +65,14 @@ datanya. Itu pernah terjadi sekali saat Phase 9 dikerjakan.
 2. **Rate limit API key dihitung per proses**, jadi perlu ditinjau bila instance
    kelak direplikasi. Berlaku juga untuk rate limit endpoint ack. (Duplikasi
    *check* saat direplikasi sudah tidak jadi masalah sejak lease scheduler,
-   tapi rate limit tetap hidup sendiri-sendiri di tiap proses.)
+   tapi rate limit tetap hidup sendiri-sendiri di tiap proses.) Sengaja belum
+   dikerjakan selama instance masih satu: memindahkannya ke database berarti
+   satu tulisan tambahan per permintaan API.
+
 ## Yang perlu dilakukan di instance yang sedang berjalan
 
 Container produksi yang dibangun sebelum Phase 8 **tidak otomatis ikut berubah**
-saat repo diperbarui. Untuk membawa seluruh pekerjaan Phase 8-9 ke sana:
+saat repo diperbarui. Untuk membawa seluruh pekerjaan Phase 8-10 ke sana:
 
 ```bash
 docker compose up -d --build
@@ -168,4 +174,7 @@ pada tiap push ke `main` dan tiap pull request.
 - Untuk memeriksa halaman secara visual, jalankan `npm run build` di `client`
   lalu start server uji dengan `CLIENT_DIST="../client/dist"` — seluruh aplikasi
   ikut dilayani di port yang sama, jadi tidak perlu vite dev server.
-- Seluruh halaman sudah diperiksa visual di Chrome headless. Cara memotretnya: jalankan Chrome dengan `--headless=new --remote-debugging-port=9222`, suntikkan token login ke `localStorage` dengan kunci `pulsewatch_token` lewat `Runtime.evaluate`, lalu `Page.captureScreenshot` dengan `captureBeyondViewport: true`.
+- Memotret halaman tanpa membuka browser sendiri: jalankan Chrome dengan
+  `--headless=new --remote-debugging-port=9222`, suntikkan token login ke
+  `localStorage` (kunci `pulsewatch_token`) lewat `Runtime.evaluate`, lalu
+  `Page.captureScreenshot`. Seluruh halaman sudah pernah diperiksa dengan cara ini.
