@@ -1,8 +1,8 @@
 import { decryptSecret } from "../lib/crypto.js";
 
-// Check database: PostgreSQL, MySQL, dan Redis.
+// Check database: PostgreSQL, MySQL, Oracle, SQL Server, dan Redis.
 //
-// Ketiganya mengikuti pola yang sama dengan check lain — mengembalikan
+// Semuanya mengikuti pola yang sama dengan check lain — mengembalikan
 // { ok, ms, message } dan tidak pernah melempar. Bedanya, check ini membuka
 // koneksi baru tiap kali dan menutupnya lagi: monitor yang memantau kesehatan
 // database justru tidak boleh menyimpan koneksi menganggur di sana, dan
@@ -13,7 +13,7 @@ import { decryptSecret } from "../lib/crypto.js";
 // Query sendiri boleh diisi lewat check_config.query — berguna untuk memastikan
 // sebuah tabel terbaca, bukan sekadar server hidup.
 
-const DEFAULT_QUERY = { postgres: "SELECT 1", mysql: "SELECT 1" };
+const DEFAULT_QUERY = { postgres: "SELECT 1", mysql: "SELECT 1", oracle: "SELECT 1 FROM DUAL", mssql: "SELECT 1" };
 
 // Pesan driver kadang memuat connection string lengkap beserta passwordnya.
 // Apa pun yang berbentuk ://user:password@ disamarkan sebelum jadi pesan
@@ -80,6 +80,69 @@ async function checkMysql(monitor, timeoutSeconds) {
   }
 }
 
+// oracle://user:pass@host:1521/SERVICE → kredensial + "host:port/SERVICE".
+// Driver dipakai dalam mode thin, jadi tidak butuh Oracle Instant Client.
+export function parseOracleUri(uri) {
+  const u = new URL(uri);
+  if (u.protocol !== "oracle:") throw new Error("Connection string Oracle harus diawali oracle://");
+  const service = decodeURIComponent(u.pathname.replace(/^\//, ""));
+  if (!service) throw new Error("Nama service Oracle belum diisi (oracle://user:pass@host:1521/SERVICE)");
+  return {
+    user: decodeURIComponent(u.username),
+    password: decodeURIComponent(u.password),
+    connectString: `${u.hostname}:${u.port || 1521}/${service}`,
+  };
+}
+
+// mssql://user:pass@host:1433/db?encrypt=true&trustServerCertificate=true
+export function parseMssqlUri(uri) {
+  const u = new URL(uri);
+  if (u.protocol !== "mssql:") throw new Error("Connection string SQL Server harus diawali mssql://");
+  const flag = (name, fallback) => (u.searchParams.has(name) ? u.searchParams.get(name) === "true" : fallback);
+  return {
+    user: decodeURIComponent(u.username),
+    password: decodeURIComponent(u.password),
+    server: u.hostname,
+    port: Number(u.port) || 1433,
+    database: decodeURIComponent(u.pathname.replace(/^\//, "")) || undefined,
+    // Sama seperti Postgres: yang diuji "database menjawab", bukan rantai sertifikatnya
+    options: { encrypt: flag("encrypt", true), trustServerCertificate: flag("trustServerCertificate", true) },
+  };
+}
+
+async function checkOracle(monitor, timeoutSeconds) {
+  const { default: oracledb } = await import("oracledb");
+  const query = configOf(monitor).query || DEFAULT_QUERY.oracle;
+  const conn = await oracledb.getConnection({ ...parseOracleUri(connectionUri(monitor)), connectTimeout: timeoutSeconds });
+  try {
+    conn.callTimeout = timeoutSeconds * 1000;
+    const result = await conn.execute(query);
+    return { rows: result.rows?.length ?? 0 };
+  } finally {
+    await conn.close().catch(() => {});
+  }
+}
+
+async function checkMssql(monitor, timeoutSeconds) {
+  const { default: mssql } = await import("mssql");
+  const query = configOf(monitor).query || DEFAULT_QUERY.mssql;
+  // ConnectionPool sendiri, bukan mssql.connect() global: pool global dipakai
+  // bersama oleh semua monitor SQL Server dan tidak ikut ditutup per check.
+  const pool = new mssql.ConnectionPool({
+    ...parseMssqlUri(connectionUri(monitor)),
+    connectionTimeout: timeoutSeconds * 1000,
+    requestTimeout: timeoutSeconds * 1000,
+    pool: { max: 1, min: 0 },
+  });
+  try {
+    await pool.connect();
+    const result = await pool.request().query(query);
+    return { rows: result.recordset?.length ?? 0 };
+  } finally {
+    await pool.close().catch(() => {});
+  }
+}
+
 async function checkRedis(monitor, timeoutSeconds) {
   const { createClient } = await import("redis");
   const client = createClient({
@@ -106,7 +169,7 @@ async function checkRedis(monitor, timeoutSeconds) {
   }
 }
 
-const RUNNERS = { postgres: checkPostgres, mysql: checkMysql, redis: checkRedis };
+const RUNNERS = { postgres: checkPostgres, mysql: checkMysql, oracle: checkOracle, mssql: checkMssql, redis: checkRedis };
 
 export async function checkDatabase(monitor) {
   const runner = RUNNERS[monitor.type];

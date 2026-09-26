@@ -7,7 +7,7 @@ import { checkGrpc } from "./grpc.js";
 import { checkKafka } from "./kafka.js";
 
 // Tipe database memakai runner yang sama; yang membedakannya hanya driver
-export const DATABASE_TYPES = ["postgres", "mysql", "redis"];
+export const DATABASE_TYPES = ["postgres", "mysql", "oracle", "mssql", "redis"];
 export const MONITOR_TYPES = ["http", "tcp", "ping", "dns", "push", ...DATABASE_TYPES, "grpc", "kafka"];
 
 export async function runCheck(monitor) {
@@ -18,6 +18,8 @@ export async function runCheck(monitor) {
     case "dns": return checkDns(monitor);
     case "postgres":
     case "mysql":
+    case "oracle":
+    case "mssql":
     case "redis":
       return checkDatabase(monitor);
     case "grpc": return checkGrpc(monitor);

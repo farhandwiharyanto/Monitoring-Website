@@ -142,6 +142,8 @@ function cleanSloTarget(body, errors) {
 const CONN_SCHEMES = {
   postgres: ["postgres://", "postgresql://"],
   mysql: ["mysql://"],
+  oracle: ["oracle://"],
+  mssql: ["mssql://"],
   redis: ["redis://", "rediss://"],
 };
 
@@ -189,7 +191,7 @@ function cleanCheckConfig(body, type, errors) {
     if (input.kafka_ssl === true) out.kafka_ssl = true;
     return Object.keys(out).length ? out : null;
   }
-  if (type === "postgres" || type === "mysql") {
+  if (type === "postgres" || type === "mysql" || type === "oracle" || type === "mssql") {
     const query = String(input.query ?? "").trim();
     if (query) {
       // Query monitor dijalankan berulang kali selamanya; yang mengubah data

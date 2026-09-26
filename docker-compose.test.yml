@@ -29,6 +29,27 @@ services:
       MYSQL_DATABASE: pwtest
     ports: ["53306:3306"]
 
+  # Oracle Free (ada image arm64). Butuh ~1-2 menit sampai service FREEPDB1
+  # siap; APP_USER dibuat otomatis di PDB itu.
+  #   oracle://pw:pw@localhost:51521/FREEPDB1
+  test-oracle:
+    image: gvenzl/oracle-free:slim
+    environment:
+      ORACLE_PASSWORD: pw
+      APP_USER: pw
+      APP_USER_PASSWORD: pw
+    ports: ["51521:1521"]
+
+  # Hanya ada image amd64; di Apple Silicon butuh Rosetta di Docker Desktop.
+  #   mssql://sa:Pwtest-12345@localhost:51433/master?trustServerCertificate=true
+  test-mssql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    platform: linux/amd64
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: Pwtest-12345
+    ports: ["51433:1433"]
+
   test-redis:
     image: redis:7-alpine
     ports: ["56379:6379"]

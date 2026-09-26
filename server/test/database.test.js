@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { checkDatabase, sanitize } from "../src/checks/database.js";
+import { checkDatabase, sanitize, parseOracleUri, parseMssqlUri } from "../src/checks/database.js";
 import { encryptSecret } from "../src/lib/crypto.js";
 
 test("password di dalam connection string disamarkan sebelum jadi pesan", () => {
@@ -19,7 +19,7 @@ test("pesan panjang dipotong supaya tidak membengkakkan tabel heartbeat", () => 
 });
 
 test("tipe yang tidak dikenal gagal dengan rapi, bukan melempar", async () => {
-  const r = await checkDatabase({ type: "oracle", timeout_seconds: 5 });
+  const r = await checkDatabase({ type: "db2", timeout_seconds: 5 });
   assert.equal(r.ok, false);
   assert.match(r.message, /tidak dikenal/);
 });
@@ -47,4 +47,24 @@ test("host yang tidak menjawab dihentikan oleh timeout sendiri", async () => {
   assert.equal(r.ok, false);
   assert.match(r.message, /Timeout|ETIMEDOUT|EHOSTUNREACH|ENETUNREACH/);
   assert.ok(r.ms < 4000, `check harus berhenti sendiri, bukan menggantung (${r.ms}ms)`);
+});
+
+test("connection string Oracle diurai jadi kredensial dan connectString", () => {
+  assert.deepEqual(parseOracleUri("oracle://mon:p%40ss@db.internal:1522/FREEPDB1"), {
+    user: "mon",
+    password: "p@ss",
+    connectString: "db.internal:1522/FREEPDB1",
+  });
+  assert.equal(parseOracleUri("oracle://a:b@h/XE").connectString, "h:1521/XE");
+  assert.throws(() => parseOracleUri("oracle://a:b@h:1521/"), /service/);
+});
+
+test("connection string SQL Server membaca port, database, dan opsi TLS", () => {
+  const c = parseMssqlUri("mssql://sa:pw@sql.internal:14330/app?encrypt=false");
+  assert.equal(c.server, "sql.internal");
+  assert.equal(c.port, 14330);
+  assert.equal(c.database, "app");
+  assert.deepEqual(c.options, { encrypt: false, trustServerCertificate: true });
+  assert.equal(parseMssqlUri("mssql://sa:pw@h").port, 1433);
+  assert.throws(() => parseMssqlUri("mysql://a:b@h"), /mssql:\/\//);
 });
