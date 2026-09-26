@@ -63,11 +63,6 @@ datanya. Itu pernah terjadi sekali saat Phase 9 dikerjakan.
    kelak direplikasi. Berlaku juga untuk rate limit endpoint ack. (Duplikasi
    *check* saat direplikasi sudah tidak jadi masalah sejak lease scheduler,
    tapi rate limit tetap hidup sendiri-sendiri di tiap proses.)
-3. **Kontak on-call hanya bisa disetel admin.** Konfigurasi notifikasi berisi
-   kredensial sehingga router-nya admin-only, jadi viewer yang ikut piket tidak
-   bisa mengatur kontaknya sendiri. Kalau nanti perlu, jalannya adalah endpoint
-   swalayan yang hanya mengembalikan id/nama/tipe notifikasi, bukan config-nya.
-
 ## Yang perlu dilakukan di instance yang sedang berjalan
 
 Container produksi yang dibangun sebelum Phase 8 **tidak otomatis ikut berubah**

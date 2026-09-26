@@ -235,6 +235,38 @@ oncallRouter.get("/policies", async (req, res) => {
   res.json(rows.map(shapePolicy));
 });
 
+// --- Kontak on-call milik sendiri ---
+// Router notifikasi admin-only karena config-nya berisi kredensial, jadi user
+// yang ikut piket (termasuk viewer) memilih kontaknya lewat sini: daftar yang
+// dikembalikan hanya id, nama, dan tipe — tidak pernah config-nya.
+
+oncallRouter.get("/my-contact", async (req, res) => {
+  const [me, options] = await Promise.all([
+    prisma.user.findUnique({ where: { id: req.user.id }, select: { oncall_notification_id: true } }),
+    prisma.notification.findMany({ select: { id: true, name: true, type: true }, orderBy: { name: "asc" } }),
+  ]);
+  res.json({ notification_id: me?.oncall_notification_id ?? null, options });
+});
+
+oncallRouter.put("/my-contact", async (req, res) => {
+  const raw = req.body?.notification_id;
+  let nid = null;
+  if (raw !== null && raw !== undefined && raw !== "") {
+    nid = Number(raw);
+    if (!Number.isInteger(nid) || !(await prisma.notification.findUnique({ where: { id: nid }, select: { id: true } }))) {
+      return res.status(400).json({ error: "Notifikasi kontak on-call tidak ditemukan" });
+    }
+  }
+  const before = await prisma.user.findUnique({ where: { id: req.user.id }, select: { oncall_notification_id: true } });
+  await prisma.user.update({ where: { id: req.user.id }, data: { oncall_notification_id: nid } });
+  recordAudit(req, {
+    action: "user.update", entity: "user", entityId: req.user.id, entityName: req.user.username,
+    summary: `${req.user.username} mengubah kontak on-call sendiri`,
+    changes: diffFields(before, { oncall_notification_id: nid }),
+  });
+  res.json({ notification_id: nid });
+});
+
 // Pengulangan rantai: 0–10 kali, jeda 1–1440 menit. Nilai yang tidak dikirim
 // memakai `fallback` (nilai lama saat edit, bawaan saat membuat).
 function repeatFields(body, fallback) {

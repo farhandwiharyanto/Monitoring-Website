@@ -242,6 +242,7 @@ const id = {
   },
   settings: {
     title: "Pengaturan", subtitle: "Akun & tampilan",
+    noContactOptions: "Belum ada channel notifikasi. Minta admin membuatnya dulu.",
     appearance: "Tampilan", language: "Bahasa", theme: "Tema",
     themeDark: "Gelap", themeLight: "Terang", themeAuto: "Ikuti sistem",
     saveAsDefault: "Jadikan default instance", savedDefault: "Default instance disimpan",
@@ -661,6 +662,7 @@ const en = {
   },
   settings: {
     title: "Settings", subtitle: "Account & appearance",
+    noContactOptions: "No notification channels yet. Ask an admin to create one first.",
     appearance: "Appearance", language: "Language", theme: "Theme",
     themeDark: "Dark", themeLight: "Light", themeAuto: "Match system",
     saveAsDefault: "Set as instance default", savedDefault: "Instance default saved",

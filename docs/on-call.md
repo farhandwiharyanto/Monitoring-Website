@@ -44,12 +44,12 @@ kolom waktu lain.
 ## Kontak on-call
 
 Orang yang bertugas hanya bisa dipanggil kalau punya **kontak on-call**: satu notifikasi
-pribadi (mis. Telegram atau ntfy miliknya sendiri) yang disetel admin di halaman
-**Users**. Tanpa kontak, namanya tetap muncul di jadwal tapi tingkat eskalasi yang
+pribadi (mis. Telegram atau ntfy miliknya sendiri). Setiap user, termasuk viewer,
+bisa memilihnya sendiri di **Pengaturan**; admin juga bisa menyetelnya di **Users**. Tanpa kontak, namanya tetap muncul di jadwal tapi tingkat eskalasi yang
 menunjuk jadwal itu akan dilewati — dicatat sebagai `skipped` beserta alasannya.
 
-Karena konfigurasi notifikasi berisi kredensial dan hanya boleh dibaca admin, viewer
-tidak bisa menyetel kontaknya sendiri. Admin yang menetapkannya.
+Channel notifikasinya tetap dibuat admin, karena konfigurasinya berisi kredensial.
+Pilihan yang ditampilkan ke user lain hanya id, nama, dan tipe (`GET/PUT /api/oncall/my-contact`).
 
 ## Acknowledge
 

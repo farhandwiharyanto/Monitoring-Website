@@ -8,6 +8,7 @@ import { useAuth } from "../lib/auth.jsx";
 import { reconnectWithToken } from "../lib/socket.js";
 import ApiKeys from "../components/ApiKeys.jsx";
 import TwoFactor from "../components/TwoFactor.jsx";
+import OnCallContact from "../components/OnCallContact.jsx";
 
 const THEME_ICONS = { dark: Moon, light: Sun, auto: Laptop };
 const THEME_KEYS = { dark: "settings.themeDark", light: "settings.themeLight", auto: "settings.themeAuto" };
@@ -291,6 +292,8 @@ export default function Settings() {
       </form>
 
       <TwoFactor />
+
+      <OnCallContact />
     </div>
   );
 }
