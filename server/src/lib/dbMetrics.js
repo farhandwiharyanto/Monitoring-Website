@@ -232,3 +232,34 @@ export function downsample(series, max = 600) {
   const step = Math.ceil(series.length / max);
   return series.filter((_, i) => i % step === 0 || i === series.length - 1);
 }
+
+// Ambang temuan otomatis. Sengaja konstanta, bukan pengaturan: angka ini
+// titik awal yang masuk akal, dan menu Database hanya memberi tahu, tidak
+// mengirim alert.
+export const FINDING_THRESHOLDS = {
+  conn_pct: 80, // koneksi terpakai > 80% dari maksimum
+  cache_hit: 90, // cache hit < 90%
+  long_queries: 0, // ada query berjalan > 30 detik
+  lock_waits: 0, // ada lock yang menunggu
+  repl_lag_s: 60, // replication lag > 60 detik
+  size_growth_pct: 20, // ukuran naik > 20% dalam 7 hari
+};
+
+// metrics: sampel terbaru; weekAgo: sampel tertua dalam 7 hari terakhir
+export function findings(metrics, weekAgo) {
+  if (!metrics) return [];
+  const T = FINDING_THRESHOLDS;
+  const out = [];
+  const connPct = metrics.conn_used != null && metrics.conn_max ? (metrics.conn_used / metrics.conn_max) * 100 : null;
+  if (connPct !== null && connPct > T.conn_pct) out.push({ key: "conn_pct", value: Math.round(connPct * 10) / 10, threshold: T.conn_pct });
+  if (metrics.cache_hit != null && metrics.cache_hit < T.cache_hit) out.push({ key: "cache_hit", value: metrics.cache_hit, threshold: T.cache_hit });
+  if (metrics.long_queries > T.long_queries) out.push({ key: "long_queries", value: metrics.long_queries, threshold: 30 });
+  if (metrics.lock_waits > T.lock_waits) out.push({ key: "lock_waits", value: metrics.lock_waits, threshold: T.lock_waits });
+  if (metrics.repl_lag_s != null && metrics.repl_lag_s > T.repl_lag_s) out.push({ key: "repl_lag_s", value: metrics.repl_lag_s, threshold: T.repl_lag_s });
+  const before = num(weekAgo?.size_bytes), now = num(metrics.size_bytes);
+  if (before > 0 && now !== null) {
+    const growth = ((now - before) / before) * 100;
+    if (growth > T.size_growth_pct) out.push({ key: "size_growth_pct", value: Math.round(growth * 10) / 10, threshold: T.size_growth_pct });
+  }
+  return out;
+}

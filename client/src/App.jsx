@@ -26,6 +26,7 @@ const Users = lazy(() => import("./pages/Users.jsx"));
 const Maintenance = lazy(() => import("./pages/Maintenance.jsx"));
 const Audit = lazy(() => import("./pages/Audit.jsx"));
 const Reports = lazy(() => import("./pages/Reports.jsx"));
+const Databases = lazy(() => import("./pages/Databases.jsx"));
 const OnCall = lazy(() => import("./pages/OnCall.jsx"));
 
 export default function App() {
@@ -99,6 +100,8 @@ export default function App() {
             <Route path="/users" element={<AdminOnly><Users /></AdminOnly>} />
             <Route path="/audit" element={<AdminOnly><Audit /></AdminOnly>} />
             <Route path="/reports" element={<Reports />} />
+            <Route path="/databases" element={<Databases />} />
+            <Route path="/databases/:id" element={<Databases />} />
             <Route path="/oncall" element={<OnCall />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="*" element={<Navigate to="/" replace />} />

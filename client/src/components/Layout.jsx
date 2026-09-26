@@ -1,5 +1,5 @@
 import { NavLink, Link } from "react-router-dom";
-import { Activity, LayoutDashboard, Bell, Globe, Settings, LogOut, Plus, Wifi, WifiOff, List, Wrench, Users, ShieldCheck, Eye, ScrollText, BarChart3, Siren } from "lucide-react";
+import { Activity, LayoutDashboard, Bell, Globe, Settings, LogOut, Plus, Wifi, WifiOff, List, Wrench, Users, ShieldCheck, Eye, ScrollText, BarChart3, Siren, Database } from "lucide-react";
 import clsx from "clsx";
 import { useMonitors } from "../lib/monitors.jsx";
 import { useAuth } from "../lib/auth.jsx";
@@ -14,6 +14,7 @@ const nav = [
   { to: "/oncall", key: "nav.oncall", icon: Siren },
   { to: "/status-pages", key: "nav.statusPages", icon: Globe },
   { to: "/reports", key: "nav.reports", icon: BarChart3 },
+  { to: "/databases", key: "nav.databases", icon: Database },
   { to: "/users", key: "nav.users", icon: Users, admin: true },
   { to: "/audit", key: "nav.audit", icon: ScrollText, admin: true },
   { to: "/settings", key: "nav.settings", icon: Settings },

@@ -123,3 +123,15 @@ test("deret panjang diperkecil tanpa kehilangan titik terakhir", () => {
   assert.equal(out.at(-1).i, 8639);
   assert.equal(downsample(series.slice(0, 10)).length, 10);
 });
+
+test("temuan otomatis muncul hanya saat ambang terlewati", async () => {
+  const { findings } = await import("../src/lib/dbMetrics.js");
+  const healthy = { conn_used: 10, conn_max: 100, cache_hit: 99, long_queries: 0, lock_waits: 0, repl_lag_s: null, size_bytes: 110 };
+  assert.deepEqual(findings(healthy, { size_bytes: 100 }), []);
+  const bad = { conn_used: 90, conn_max: 100, cache_hit: 85, long_queries: 2, lock_waits: 1, repl_lag_s: 120, size_bytes: 150 };
+  assert.deepEqual(findings(bad, { size_bytes: 100 }).map((f) => f.key),
+    ["conn_pct", "cache_hit", "long_queries", "lock_waits", "repl_lag_s", "size_growth_pct"]);
+  // Metrik yang tidak terbaca tidak pernah menjadi temuan
+  assert.deepEqual(findings({ conn_used: null, cache_hit: null, long_queries: null }, null), []);
+  assert.deepEqual(findings(null), []);
+});

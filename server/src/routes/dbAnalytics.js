@@ -3,7 +3,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "../db.js";
 import { requireAuth } from "../lib/auth.js";
 import { lastStatusMap } from "../lib/dependency.js";
-import { METRIC_TYPES, toSeries, downsample } from "../lib/dbMetrics.js";
+import { METRIC_TYPES, toSeries, downsample, findings } from "../lib/dbMetrics.js";
 
 // Analitik monitor database (menu Database). Dibaca siapa pun yang login,
 // sama seperti laporan: isinya angka, bukan kredensial atau konfigurasi.
@@ -14,6 +14,20 @@ const RANGES = { "24h": 1, "7d": 7, "30d": 30 };
 
 const monitorFields = { id: true, name: true, type: true, active: true };
 
+// Sampel tertua dalam 7 hari terakhir per monitor, pembanding pertumbuhan ukuran.
+// created_at tanpa zona berisi UTC, jadi batasnya disamakan (lihat rencana.md).
+async function weekAgoMap(ids) {
+  const map = new Map();
+  if (!ids.length) return map;
+  const since = new Date(Date.now() - 7 * 86400_000);
+  const rows = await prisma.$queryRaw`
+    SELECT DISTINCT ON (monitor_id) monitor_id, metrics FROM db_metrics
+    WHERE monitor_id IN (${Prisma.join(ids)}) AND created_at >= ${since}::timestamptz AT TIME ZONE 'UTC'
+    ORDER BY monitor_id, created_at ASC`;
+  for (const r of rows) map.set(r.monitor_id, r.metrics);
+  return map;
+}
+
 // Ringkasan semua monitor database: metrik terbaru dan QPS dari dua sampel terakhir
 dbAnalyticsRouter.get("/", async (req, res) => {
   const monitors = await prisma.monitor.findMany({
@@ -22,8 +36,9 @@ dbAnalyticsRouter.get("/", async (req, res) => {
     orderBy: { name: "asc" },
   });
   const ids = monitors.map((m) => m.id);
-  const [statuses, rows] = await Promise.all([
+  const [statuses, weekAgo, rows] = await Promise.all([
     lastStatusMap(ids),
+    weekAgoMap(ids),
     ids.length
       ? prisma.$queryRaw`
           SELECT monitor_id, created_at, metrics FROM (
@@ -47,6 +62,7 @@ dbAnalyticsRouter.get("/", async (req, res) => {
         collected_at: latest?.created_at ?? null,
         metrics: latest?.metrics ?? null,
         point: series.at(-1) ?? null,
+        findings: findings(latest?.metrics, weekAgo.get(m.id)),
       };
     })
   );
@@ -69,11 +85,13 @@ dbAnalyticsRouter.get("/:monitorId", async (req, res) => {
     select: { created_at: true, metrics: true },
   });
   const latest = samples.at(-1);
+  const [statuses, weekAgo] = await Promise.all([lastStatusMap([id]), weekAgoMap([id])]);
   res.json({
-    monitor: { ...monitor, status: (await lastStatusMap([id])).get(id) ?? null },
+    monitor: { ...monitor, status: statuses.get(id) ?? null },
     range,
     collected_at: latest?.created_at ?? null,
     metrics: latest?.metrics ?? null,
+    findings: findings(latest?.metrics, weekAgo.get(id)),
     series: downsample(toSeries(samples)),
   });
 });
