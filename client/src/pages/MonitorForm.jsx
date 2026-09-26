@@ -16,17 +16,21 @@ const TYPES = [
   { v: "push", label: "form.typePush", desc: "form.typePushDesc" },
   { v: "postgres", label: "form.typePostgres", desc: "form.typeDbDesc" },
   { v: "mysql", label: "form.typeMysql", desc: "form.typeDbDesc" },
+  { v: "oracle", label: "form.typeOracle", desc: "form.typeDbDesc" },
+  { v: "mssql", label: "form.typeMssql", desc: "form.typeDbDesc" },
   { v: "redis", label: "form.typeRedis", desc: "form.typeRedisDesc" },
   { v: "grpc", label: "form.typeGrpc", desc: "form.typeGrpcDesc" },
   { v: "kafka", label: "form.typeKafka", desc: "form.typeKafkaDesc" },
 ];
 
 // Tipe yang targetnya berupa connection string, bukan hostname/URL
-const DB_TYPES = ["postgres", "mysql", "redis"];
+const DB_TYPES = ["postgres", "mysql", "oracle", "mssql", "redis"];
 // Contoh yang ditampilkan di placeholder, sekaligus mengisyaratkan skema yang sah
 const CONN_PLACEHOLDER = {
   postgres: "postgres://user:password@host:5432/nama_db",
   mysql: "mysql://user:password@host:3306/nama_db",
+  oracle: "oracle://user:password@host:1521/SERVICE",
+  mssql: "mssql://user:password@host:1433/nama_db?trustServerCertificate=true",
   redis: "redis://host:6379",
 };
 

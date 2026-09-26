@@ -145,20 +145,25 @@ berbunyi hanya karena sebuah layanan melambat.
 
 ## Monitor database
 
-Tiga tipe check baru: **PostgreSQL**, **MySQL**, dan **Redis**. Targetnya berupa
+Lima tipe: **PostgreSQL**, **MySQL**, **Oracle**, **SQL Server**, dan **Redis**. Targetnya berupa
 connection string, bukan hostname:
 
 ```
 postgres://user:password@host:5432/nama_db
 mysql://user:password@host:3306/nama_db
+oracle://user:password@host:1521/SERVICE
+mssql://user:password@host:1433/nama_db?encrypt=true&trustServerCertificate=true
 redis://host:6379
 ```
+
+Oracle memakai driver mode thin, jadi tidak butuh Oracle Instant Client. Untuk
+SQL Server, `encrypt` dan `trustServerCertificate` bawaannya `true`.
 
 Connection string disimpan terenkripsi seperti kredensial monitor lainnya dan
 **tidak pernah dikirim balik ke browser**. Saat mengedit monitor, field-nya
 kosong dan boleh dibiarkan kosong — yang tersimpan tetap dipakai.
 
-Bawaannya `SELECT 1` (Postgres/MySQL) dan `PING` (Redis). Query sendiri boleh
+Bawaannya `SELECT 1` (Postgres/MySQL/SQL Server), `SELECT 1 FROM DUAL` (Oracle), dan `PING` (Redis). Query sendiri boleh
 diisi untuk memastikan sebuah tabel benar-benar terbaca, bukan sekadar server
 hidup. Query wajib diawali `SELECT`, `SHOW`, atau `EXPLAIN`: query monitor
 dijalankan berulang kali selamanya, dan yang mengubah data tidak pada tempatnya
@@ -173,7 +178,7 @@ Pesan kegagalan dari driver disaring dulu: apa pun yang berbentuk
 `://user:password@` disamarkan, karena pesan heartbeat terbaca oleh viewer dan
 ikut ke export.
 
-Untuk menguji ketiganya, ada `docker-compose.test.yml` di root repo.
+Untuk mengujinya, ada `docker-compose.test.yml` di root repo.
 
 ## Monitor gRPC
 

@@ -14,7 +14,7 @@ export function setFormatLang(next) {
 const t = (key, vars) => translate(lang, key, vars);
 const locale = () => (lang === "en" ? "en-GB" : "id-ID");
 
-const DB_TARGET_TYPES = new Set(["postgres", "mysql", "redis"]);
+const DB_TARGET_TYPES = new Set(["postgres", "mysql", "oracle", "mssql", "redis"]);
 
 export const statusMeta = {
   0: { key: "0", color: "text-down", bg: "bg-down", ring: "ring-down/30", dot: "bg-down" },
