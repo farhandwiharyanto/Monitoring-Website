@@ -135,6 +135,7 @@ model Monitor {
   escalations       Escalation[]
 
   heartbeats    Heartbeat[]
+  db_metrics    DbMetric[]
   incidents     Incident[]
   notifications MonitorNotification[]
   status_pages  StatusPageMonitor[]
@@ -172,6 +173,21 @@ model Heartbeat {
   @@index([monitor_id, created_at(sort: Desc)])
   @@index([monitor_id, location, created_at(sort: Desc)])
   @@map("heartbeats")
+}
+
+// Metrik monitor database (lib/dbMetrics.js), paling sering tiap 5 menit per
+// monitor. Isinya satu objek JSON berbentuk sama untuk semua dialek; metrik
+// yang tidak terbaca bernilai null.
+model DbMetric {
+  id         Int      @id @default(autoincrement())
+  monitor_id Int
+  created_at DateTime @default(now())
+  metrics    Json
+
+  monitor Monitor @relation(fields: [monitor_id], references: [id], onDelete: Cascade)
+
+  @@index([monitor_id, created_at(sort: Desc)])
+  @@map("db_metrics")
 }
 
 model Incident {

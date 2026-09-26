@@ -10,7 +10,8 @@ import { checkKafka } from "./kafka.js";
 export const DATABASE_TYPES = ["postgres", "mysql", "oracle", "mssql", "redis"];
 export const MONITOR_TYPES = ["http", "tcp", "ping", "dns", "push", ...DATABASE_TYPES, "grpc", "kafka"];
 
-export async function runCheck(monitor) {
+// opts.collectMetrics hanya berlaku untuk tipe database (lihat lib/dbMetrics.js)
+export async function runCheck(monitor, opts = {}) {
   switch (monitor.type) {
     case "http": return checkHttp(monitor);
     case "tcp": return checkTcp(monitor);
@@ -21,7 +22,7 @@ export async function runCheck(monitor) {
     case "oracle":
     case "mssql":
     case "redis":
-      return checkDatabase(monitor);
+      return checkDatabase(monitor, opts);
     case "grpc": return checkGrpc(monitor);
     case "kafka": return checkKafka(monitor);
     // Monitor push tidak aktif dicek: target yang mengirim heartbeat sendiri.

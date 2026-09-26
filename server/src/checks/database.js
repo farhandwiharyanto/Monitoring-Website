@@ -1,4 +1,5 @@
 import { decryptSecret } from "../lib/crypto.js";
+import { collectMetrics } from "../lib/dbMetrics.js";
 
 // Check database: PostgreSQL, MySQL, Oracle, SQL Server, dan Redis.
 //
@@ -45,7 +46,7 @@ function connectionUri(monitor) {
 
 const configOf = (monitor) => (monitor.check_config && typeof monitor.check_config === "object" ? monitor.check_config : {});
 
-async function checkPostgres(monitor, timeoutSeconds) {
+async function checkPostgres(monitor, timeoutSeconds, ctx) {
   const { default: pg } = await import("pg");
   const query = configOf(monitor).query || DEFAULT_QUERY.postgres;
   const client = new pg.Client({
@@ -59,13 +60,14 @@ async function checkPostgres(monitor, timeoutSeconds) {
   try {
     await client.connect();
     const result = await client.query(query);
-    return { rows: result.rowCount ?? result.rows?.length ?? 0 };
+    ctx.checked({ rows: result.rowCount ?? result.rows?.length ?? 0 });
+    if (ctx.collect) ctx.metrics = await collectMetrics("postgres", async (sql) => (await client.query(sql)).rows);
   } finally {
     await client.end().catch(() => {});
   }
 }
 
-async function checkMysql(monitor, timeoutSeconds) {
+async function checkMysql(monitor, timeoutSeconds, ctx) {
   const mysql = await import("mysql2/promise");
   const query = configOf(monitor).query || DEFAULT_QUERY.mysql;
   const conn = await mysql.createConnection({
@@ -74,7 +76,8 @@ async function checkMysql(monitor, timeoutSeconds) {
   });
   try {
     const [rows] = await conn.query(query);
-    return { rows: Array.isArray(rows) ? rows.length : 0 };
+    ctx.checked({ rows: Array.isArray(rows) ? rows.length : 0 });
+    if (ctx.collect) ctx.metrics = await collectMetrics("mysql", async (sql) => (await conn.query(sql))[0]);
   } finally {
     await conn.end().catch(() => {});
   }
@@ -110,20 +113,26 @@ export function parseMssqlUri(uri) {
   };
 }
 
-async function checkOracle(monitor, timeoutSeconds) {
+async function checkOracle(monitor, timeoutSeconds, ctx) {
   const { default: oracledb } = await import("oracledb");
   const query = configOf(monitor).query || DEFAULT_QUERY.oracle;
   const conn = await oracledb.getConnection({ ...parseOracleUri(connectionUri(monitor)), connectTimeout: timeoutSeconds });
   try {
     conn.callTimeout = timeoutSeconds * 1000;
     const result = await conn.execute(query);
-    return { rows: result.rows?.length ?? 0 };
+    ctx.checked({ rows: result.rows?.length ?? 0 });
+    // Oracle mengembalikan nama kolom huruf besar; disamakan dengan dialek lain
+    const exec = async (sql) =>
+      ((await conn.execute(sql, [], { outFormat: oracledb.OUT_FORMAT_OBJECT })).rows || []).map((row) =>
+        Object.fromEntries(Object.entries(row).map(([k, v]) => [k.toLowerCase(), v]))
+      );
+    if (ctx.collect) ctx.metrics = await collectMetrics("oracle", exec);
   } finally {
     await conn.close().catch(() => {});
   }
 }
 
-async function checkMssql(monitor, timeoutSeconds) {
+async function checkMssql(monitor, timeoutSeconds, ctx) {
   const { default: mssql } = await import("mssql");
   const query = configOf(monitor).query || DEFAULT_QUERY.mssql;
   // ConnectionPool sendiri, bukan mssql.connect() global: pool global dipakai
@@ -137,13 +146,14 @@ async function checkMssql(monitor, timeoutSeconds) {
   try {
     await pool.connect();
     const result = await pool.request().query(query);
-    return { rows: result.recordset?.length ?? 0 };
+    ctx.checked({ rows: result.recordset?.length ?? 0 });
+    if (ctx.collect) ctx.metrics = await collectMetrics("mssql", async (sql) => (await pool.request().query(sql)).recordset);
   } finally {
     await pool.close().catch(() => {});
   }
 }
 
-async function checkRedis(monitor, timeoutSeconds) {
+async function checkRedis(monitor, timeoutSeconds, ctx) {
   const { createClient } = await import("redis");
   const client = createClient({
     url: connectionUri(monitor),
@@ -155,7 +165,7 @@ async function checkRedis(monitor, timeoutSeconds) {
   try {
     await client.connect();
     const pong = await client.ping();
-    return { rows: 0, detail: String(pong) };
+    ctx.checked({ rows: 0, detail: String(pong) });
   } finally {
     // destroy() melempar ClientClosedError bila koneksinya memang tidak pernah
     // terbuka. Kalau dibiarkan, error dari finally menggantikan penyebab asli
@@ -171,17 +181,28 @@ async function checkRedis(monitor, timeoutSeconds) {
 
 const RUNNERS = { postgres: checkPostgres, mysql: checkMysql, oracle: checkOracle, mssql: checkMssql, redis: checkRedis };
 
-export async function checkDatabase(monitor) {
+// collectMetrics: baca juga metrik (lib/dbMetrics.js) di koneksi yang sama.
+// Status check diputuskan begitu query check selesai; pembacaan metrik
+// sesudahnya punya batas waktunya sendiri dan gagalnya hanya berarti
+// metrics: null — tidak pernah membuat monitor down.
+export async function checkDatabase(monitor, { collectMetrics: collect = false } = {}) {
   const runner = RUNNERS[monitor.type];
   if (!runner) return { ok: false, ms: 0, message: `Tipe database tidak dikenal: ${monitor.type}` };
 
   const timeoutSeconds = Math.min(Math.max(Number(monitor.timeout_seconds) || 10, 1), 120);
   const start = now();
+  const ctx = { collect, metrics: null };
+  const checked = new Promise((resolve) => (ctx.checked = resolve));
+  const full = runner(monitor, timeoutSeconds, ctx);
+  full.catch(() => {});
   try {
-    const result = await withTimeout(runner(monitor, timeoutSeconds), timeoutSeconds, monitor.type);
+    // Tanpa metrik, tunggu runner selesai (koneksi sudah ditutup) seperti biasa
+    const result = await withTimeout(collect ? Promise.race([checked, full.then(() => checked)]) : full.then(() => checked), timeoutSeconds, monitor.type);
     const ms = elapsed(start);
     const detail = result.detail ? ` · ${result.detail}` : result.rows ? ` · ${result.rows} baris` : "";
-    return { ok: true, ms, message: `${monitor.type} OK${detail}` };
+    const out = { ok: true, ms, message: `${monitor.type} OK${detail}` };
+    if (collect) out.metrics = await withTimeout(full, timeoutSeconds, "metrik").then(() => ctx.metrics, () => null);
+    return out;
   } catch (err) {
     return { ok: false, ms: elapsed(start), message: sanitize(err.message) };
   }

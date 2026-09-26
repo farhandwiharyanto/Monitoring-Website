@@ -86,6 +86,8 @@ export const config = {
   encryptionKey: process.env.ENCRYPTION_KEY || "",
   // Retensi heartbeat (hari) — dibersihkan tiap hari jam 03:00.
   heartbeatRetentionDays: Number(process.env.HEARTBEAT_RETENTION_DAYS || 90),
+  // Retensi metrik monitor database (hari), dibersihkan bersama heartbeat.
+  dbMetricsRetentionDays: Number(process.env.DB_METRICS_RETENTION_DAYS || 30),
   // --- Laporan SLA ---
   // Downtime saat maintenance window aktif tidak dihitung melanggar SLA.
   // Set false bila ingin laporan memakai waktu kalender apa adanya.

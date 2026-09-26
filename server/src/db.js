@@ -28,6 +28,14 @@ export async function pruneOldHeartbeats() {
   if (count) console.log(`[db] prune ${count} heartbeat lama`);
 }
 
+// Metrik monitor database ikut dibersihkan (DB_METRICS_RETENTION_DAYS)
+export async function pruneOldDbMetrics() {
+  const days = Math.max(1, config.dbMetricsRetentionDays);
+  const cutoff = new Date(Date.now() - days * 86400_000);
+  const { count } = await prisma.dbMetric.deleteMany({ where: { created_at: { lt: cutoff } } });
+  if (count) console.log(`[db] prune ${count} metrik database lama`);
+}
+
 // Audit log ikut dibersihkan agar tabelnya tidak tumbuh selamanya (AUDIT_RETENTION_DAYS)
 export async function pruneOldAuditLogs() {
   const days = Math.max(1, config.auditRetentionDays);

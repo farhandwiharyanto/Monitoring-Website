@@ -10,7 +10,7 @@ export const MAX_DEPTH = 5;
 // Status heartbeat terakhir per monitor, dari lokasi primary saja — sama seperti
 // perhitungan status di stats.js, supaya "induk down" berarti hal yang sama
 // dengan yang dilihat di dashboard.
-async function lastStatusMap(ids) {
+export async function lastStatusMap(ids) {
   const map = new Map();
   if (!ids.length) return map;
   const rows = await prisma.$queryRaw`

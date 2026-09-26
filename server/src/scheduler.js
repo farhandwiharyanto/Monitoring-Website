@@ -1,5 +1,6 @@
 import cron from "node-cron";
-import { prisma, pruneOldHeartbeats, pruneOldAuditLogs, pruneOldNotificationLogs } from "./db.js";
+import { prisma, pruneOldHeartbeats, pruneOldDbMetrics, pruneOldAuditLogs, pruneOldNotificationLogs } from "./db.js";
+import { METRIC_TYPES, METRIC_INTERVAL_MS } from "./lib/dbMetrics.js";
 import { config, isPrimaryLocation } from "./config.js";
 import { runCheck } from "./checks/index.js";
 import { fetchCertInfo, tlsTarget } from "./checks/cert.js";
@@ -65,6 +66,7 @@ export async function initScheduler(socketIo) {
       // sudah punya ringkasannya, kalau tidak grafiknya berlubang selamanya.
       await rollupDaily({ days: 3 }).catch(console.error);
       pruneOldHeartbeats().catch(console.error);
+      pruneOldDbMetrics().catch(console.error);
       pruneOldAuditLogs().catch(console.error);
       pruneOldNotificationLogs().catch(console.error);
     })
@@ -173,7 +175,10 @@ async function checkPushFreshness(monitor, s) {
 }
 
 async function execute(monitor, s) {
-  const [result, maint] = await Promise.all([runCheck(monitor), isInMaintenance(monitor.id)]);
+  // Metrik database dibaca jarang dan hanya oleh lokasi primary, supaya
+  // database yang dipantau tidak ikut terbebani oleh pemantauannya.
+  const collectMetrics = METRIC_TYPES.includes(monitor.type) && isPrimaryLocation() && Date.now() >= (s.nextMetrics || 0);
+  const [result, maint] = await Promise.all([runCheck(monitor, { collectMetrics }), isInMaintenance(monitor.id)]);
 
   let status;
   if (result.ok) {
@@ -189,6 +194,11 @@ async function execute(monitor, s) {
   }
 
   await applyResult(monitor, { status, message: result.message, ms: result.ms, assertion: result.assertion }, { inMaint: !!maint });
+
+  if (result.metrics) {
+    s.nextMetrics = Date.now() + METRIC_INTERVAL_MS;
+    await prisma.dbMetric.create({ data: { monitor_id: monitor.id, metrics: result.metrics } }).catch(console.error);
+  }
 
   // Interval: saat retry pakai 1/3 interval (min 5s) supaya cepat memastikan
   const interval = status === STATUS.PENDING ? Math.max(5, Math.floor(monitor.interval_seconds / 3)) : monitor.interval_seconds;

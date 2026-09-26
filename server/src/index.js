@@ -25,6 +25,7 @@ import { webhookRouter } from "./routes/webhook.js";
 import { incidentsRouter } from "./routes/incidents.js";
 import { auditRouter } from "./routes/audit.js";
 import { reportsRouter } from "./routes/reports.js";
+import { dbAnalyticsRouter } from "./routes/dbAnalytics.js";
 import { oncallRouter, ackRouter } from "./routes/oncall.js";
 import { backupRouter } from "./routes/backup.js";
 
@@ -83,6 +84,7 @@ app.use("/api/incidents", incidentsRouter);
 // Audit log hanya dibaca admin yang login (router-nya sudah menolak API key)
 app.use("/api/audit-logs", auditRouter);
 app.use("/api/reports", reportsRouter);
+app.use("/api/db-analytics", dbAnalyticsRouter);
 // Tautan acknowledge di pesan notifikasi dibuka tanpa login, jadi dipasang
 // SEBELUM /api/oncall yang ber-auth — Express memilih route sesuai urutan.
 app.use("/api/oncall/ack", ackRouter);
