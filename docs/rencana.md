@@ -30,7 +30,10 @@ Polanya: tiap phase jadi dua commit — server dulu, lalu klien & dokumentasi.
 
 ## Belum dikerjakan
 
-Tidak ada pekerjaan terencana yang tersisa selain utang teknis di bawah. Kalau
+- **Modul monitor & analitik database** (Oracle, SQL Server, metrik, menu
+  Database). Rinciannya di [rencana-database.md](rencana-database.md).
+
+Selain itu tidak ada pekerjaan terencana yang tersisa selain utang teknis di bawah. Kalau
 menambah fitur baru, pertahankan urutan lama: fondasi (tes, CI) lebih dulu, lalu
 fitur, tipe monitor baru paling akhir.
 
