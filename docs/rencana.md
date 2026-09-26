@@ -56,26 +56,14 @@ datanya. Itu pernah terjadi sekali saat Phase 9 dikerjakan.
 
 ## Utang teknis yang diketahui
 
-1. **Beberapa halaman belum diperiksa secara visual di browser.** Halaman
-   Laporan dan Audit log lolos build dan datanya benar, tapi tata letaknya belum
-   pernah dilihat. Begitu pula form monitor untuk tipe database/gRPC/Kafka dan
-   status page publik dengan banner degraded. Sudah diperiksa di Chrome: halaman
-   Phase 7 (On-call, kartu eskalasi, kontak on-call, field policy), halaman
-   Notifikasi beserta banner channel gagal, detail monitor dengan badge degraded
-   dan grafik riwayat harian, serta panel Status sistem di Pengaturan.
-
-   Cara memotret tanpa membuka browser sendiri: jalankan Chrome dengan
-   `--headless=new --remote-debugging-port=9222`, suntikkan token login ke
-   `localStorage` dengan kunci `pulsewatch_token` lewat `Runtime.evaluate`, lalu
-   `Page.captureScreenshot` dengan `captureBeyondViewport: true`.
-2. **Penulisan audit log tidak menahan respons API.** Kalau database tumbang di
+1. **Penulisan audit log tidak menahan respons API.** Kalau database tumbang di
    antara tindakan dan pencatatannya, tindakan bisa berhasil tanpa jejak. Ini
    pertukaran yang disengaja, dicatat di [audit-log.md](audit-log.md).
-3. **Rate limit API key dihitung per proses**, jadi perlu ditinjau bila instance
+2. **Rate limit API key dihitung per proses**, jadi perlu ditinjau bila instance
    kelak direplikasi. Berlaku juga untuk rate limit endpoint ack. (Duplikasi
    *check* saat direplikasi sudah tidak jadi masalah sejak lease scheduler,
    tapi rate limit tetap hidup sendiri-sendiri di tiap proses.)
-4. **Kontak on-call hanya bisa disetel admin.** Konfigurasi notifikasi berisi
+3. **Kontak on-call hanya bisa disetel admin.** Konfigurasi notifikasi berisi
    kredensial sehingga router-nya admin-only, jadi viewer yang ikut piket tidak
    bisa mengatur kontaknya sendiri. Kalau nanti perlu, jalannya adalah endpoint
    swalayan yang hanya mengembalikan id/nama/tipe notifikasi, bukan config-nya.
@@ -185,3 +173,4 @@ pada tiap push ke `main` dan tiap pull request.
 - Untuk memeriksa halaman secara visual, jalankan `npm run build` di `client`
   lalu start server uji dengan `CLIENT_DIST="../client/dist"` — seluruh aplikasi
   ikut dilayani di port yang sama, jadi tidak perlu vite dev server.
+- Seluruh halaman sudah diperiksa visual di Chrome headless. Cara memotretnya: jalankan Chrome dengan `--headless=new --remote-debugging-port=9222`, suntikkan token login ke `localStorage` dengan kunci `pulsewatch_token` lewat `Runtime.evaluate`, lalu `Page.captureScreenshot` dengan `captureBeyondViewport: true`.

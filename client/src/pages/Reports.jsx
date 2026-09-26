@@ -54,6 +54,18 @@ export default function Reports() {
   const summary = report?.summary;
   const rows = report?.rows || [];
 
+  // Sumbu uptime dengan tick berjarak rata. Batas bawahnya dibulatkan ke
+  // kelipatan langkah, supaya label tidak ikut membulat jadi deret yang tidak rata
+  // (mis. 100.0, 99.7, 99.6, 99.4).
+  const axis = (() => {
+    const values = trend.map((d) => d.uptime).filter((v) => v !== null && v !== undefined);
+    const min = values.length ? Math.min(...values) : 100;
+    const span = Math.max(0.2, 100 - min);
+    const step = [0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 25].find((s) => s * 4 >= span * 1.1) || 25;
+    const lo = Math.max(0, 100 - step * 4);
+    return { lo, ticks: [0, 1, 2, 3, 4].map((i) => lo + step * i), decimals: (String(step).split(".")[1] || "").length };
+  })();
+
   return (
     <div className="space-y-6">
       <div className="flex items-end justify-between gap-4 flex-wrap">
@@ -157,7 +169,7 @@ export default function Reports() {
               <LineChart data={trend} margin={{ top: 5, right: 10, bottom: 0, left: -10 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} vertical={false} />
                 <XAxis dataKey="month" stroke={chart.grid} tick={{ fill: chart.axis, fontSize: 11 }} tickLine={false} axisLine={false} />
-                <YAxis domain={["dataMin - 0.5", 100]} stroke={chart.grid} tick={{ fill: chart.axis, fontSize: 11 }} tickLine={false} axisLine={false} width={56} tickFormatter={(v) => `${v.toFixed(1)}%`} />
+                <YAxis domain={[axis.lo, 100]} ticks={axis.ticks} stroke={chart.grid} tick={{ fill: chart.axis, fontSize: 11 }} tickLine={false} axisLine={false} width={60} tickFormatter={(v) => `${v.toFixed(axis.decimals)}%`} />
                 <Tooltip
                   contentStyle={{ background: chart.tooltipBg, border: `1px solid ${chart.tooltipBorder}`, borderRadius: 8, fontSize: 12 }}
                   formatter={(v) => [`${Number(v).toFixed(4)}%`, t("report.colUptime")]}
