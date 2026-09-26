@@ -25,15 +25,34 @@ async function lastStatusMap(ids) {
   return map;
 }
 
-// Tabel monitors kecil (puluhan baris), jadi rantai induk dihitung di memori:
-// satu query untuk seluruh monitor, satu lagi untuk status para induk.
+// Daftar monitor untuk menghitung rantai induk. dependencyInfo dipanggil tiap
+// kali monitor di-decorate — termasuk tiap siaran heartbeat — jadi hasil query-nya
+// disimpan sebentar. Rute yang mengubah monitor membuang cache ini, sehingga
+// jeda CACHE_MS hanya terasa di proses lain (worker multi-location).
+// Status induk sengaja TIDAK ikut di-cache: "induk sedang down" harus segar.
+const CACHE_MS = 5000;
+let cache = null; // { at, rows: Promise }
+
+function allMonitors() {
+  if (cache && Date.now() - cache.at < CACHE_MS) return cache.rows;
+  const rows = prisma.monitor.findMany({ select: { id: true, name: true, parent_id: true, active: true } });
+  cache = { at: Date.now(), rows };
+  // Query yang gagal jangan sampai tersimpan
+  rows.catch(() => { if (cache?.rows === rows) cache = null; });
+  return rows;
+}
+
+export const invalidateDependencyCache = () => { cache = null; };
+
+// Rantai induk dihitung di memori: daftar monitor (dari cache di atas), lalu
+// satu query untuk status para induk.
 // Hasilnya: untuk tiap id → induk langsung, induk terdekat yang sedang down,
 // dan jumlah monitor yang bergantung padanya.
 export async function dependencyInfo(ids) {
   const out = new Map(ids.map((id) => [id, { parent: null, blocked_by: null, children_count: 0 }]));
   if (!ids.length) return out;
 
-  const all = await prisma.monitor.findMany({ select: { id: true, name: true, parent_id: true, active: true } });
+  const all = await allMonitors();
   const byId = new Map(all.map((m) => [m.id, m]));
   const childCount = new Map();
   for (const m of all) if (m.parent_id) childCount.set(m.parent_id, (childCount.get(m.parent_id) || 0) + 1);

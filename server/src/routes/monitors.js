@@ -10,7 +10,7 @@ import { ASSERTION_OPERATORS, operatorNeedsValue, parsePath, describeAssertion }
 import { newPushToken } from "./push.js";
 import { triggerActionWebhook } from "../lib/actionWebhook.js";
 import { upsertTags } from "./tags.js";
-import { wouldCycle, chainDepth, MAX_DEPTH } from "../lib/dependency.js";
+import { wouldCycle, chainDepth, MAX_DEPTH, invalidateDependencyCache } from "../lib/dependency.js";
 import { recordAudit, diffFields, snapshotFields } from "../lib/audit.js";
 import { stopEscalation } from "../lib/escalation.js";
 import { cleanRenotifyMinutes } from "../lib/renotify.js";
@@ -422,6 +422,7 @@ monitorsRouter.post("/", requireAdmin, async (req, res) => {
       push_token: m.type === "push" ? newPushToken() : null,
     },
   });
+  invalidateDependencyCache();
   await syncRelations(created.id, req.body);
   scheduleNow(created.id);
   recordAudit(req, {
@@ -464,6 +465,7 @@ monitorsRouter.put("/:id", requireAdmin, async (req, res) => {
   if (m.type === "push" && !existing.push_token) data.push_token = newPushToken();
   if (m.type !== "push" && existing.push_token) data.push_token = null;
   const updated = await prisma.monitor.update({ where: { id }, data });
+  invalidateDependencyCache();
   await syncRelations(id, req.body);
   m.active ? scheduleNow(id) : unschedule(id);
   recordAudit(req, {
@@ -477,6 +479,7 @@ monitorsRouter.put("/:id", requireAdmin, async (req, res) => {
 monitorsRouter.post("/:id/pause", requireAdmin, async (req, res) => {
   const id = Number(req.params.id);
   const m = await prisma.monitor.update({ where: { id }, data: { active: false } });
+  invalidateDependencyCache();
   unschedule(id);
 
   // Monitor yang dijeda tidak lagi dicek, jadi incident yang masih terbuka tidak
@@ -501,6 +504,7 @@ monitorsRouter.post("/:id/pause", requireAdmin, async (req, res) => {
 monitorsRouter.post("/:id/resume", requireAdmin, async (req, res) => {
   const id = Number(req.params.id);
   const m = await prisma.monitor.update({ where: { id }, data: { active: true } });
+  invalidateDependencyCache();
   scheduleNow(id);
   recordAudit(req, { action: "monitor.resume", entity: "monitor", entityId: id, entityName: m.name, summary: `Monitor "${m.name}" dijalankan lagi` });
   res.json(shape(await findMonitor(id), req.user));
@@ -536,6 +540,7 @@ monitorsRouter.delete("/:id", requireAdmin, async (req, res) => {
   // Monitor yang jadi induk: anaknya tidak ikut terhapus, hanya lepas (SET NULL)
   const orphaned = await prisma.monitor.count({ where: { parent_id: id } });
   await prisma.monitor.delete({ where: { id } }).catch(() => {});
+  invalidateDependencyCache();
   unschedule(id);
   if (existing) {
     recordAudit(req, {

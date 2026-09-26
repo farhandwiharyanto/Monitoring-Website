@@ -68,17 +68,14 @@ datanya. Itu pernah terjadi sekali saat Phase 9 dikerjakan.
    `--headless=new --remote-debugging-port=9222`, suntikkan token login ke
    `localStorage` dengan kunci `pulsewatch_token` lewat `Runtime.evaluate`, lalu
    `Page.captureScreenshot` dengan `captureBeyondViewport: true`.
-2. **`dependencyInfo()` membaca seluruh tabel monitor tiap kali monitor
-   di-decorate**, termasuk pada tiap siaran heartbeat. Murah selama jumlah
-   monitor puluhan; perlu ditinjau ulang kalau nanti ratusan.
-3. **Penulisan audit log tidak menahan respons API.** Kalau database tumbang di
+2. **Penulisan audit log tidak menahan respons API.** Kalau database tumbang di
    antara tindakan dan pencatatannya, tindakan bisa berhasil tanpa jejak. Ini
    pertukaran yang disengaja, dicatat di [audit-log.md](audit-log.md).
-4. **Rate limit API key dihitung per proses**, jadi perlu ditinjau bila instance
+3. **Rate limit API key dihitung per proses**, jadi perlu ditinjau bila instance
    kelak direplikasi. Berlaku juga untuk rate limit endpoint ack. (Duplikasi
    *check* saat direplikasi sudah tidak jadi masalah sejak lease scheduler,
    tapi rate limit tetap hidup sendiri-sendiri di tiap proses.)
-5. **Kontak on-call hanya bisa disetel admin.** Konfigurasi notifikasi berisi
+4. **Kontak on-call hanya bisa disetel admin.** Konfigurasi notifikasi berisi
    kredensial sehingga router-nya admin-only, jadi viewer yang ikut piket tidak
    bisa mengatur kontaknya sendiri. Kalau nanti perlu, jalannya adalah endpoint
    swalayan yang hanya mengembalikan id/nama/tipe notifikasi, bukan config-nya.

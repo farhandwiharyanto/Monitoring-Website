@@ -1,7 +1,7 @@
 import test, { beforeEach, after } from "node:test";
 import assert from "node:assert/strict";
 import { prisma, resetDb, createMonitor, minutesAgo } from "./helpers.js";
-import { blockingAncestor, dependencyInfo, wouldCycle, chainDepth } from "../src/lib/dependency.js";
+import { blockingAncestor, dependencyInfo, wouldCycle, chainDepth, invalidateDependencyCache } from "../src/lib/dependency.js";
 import { config } from "../src/config.js";
 import { STATUS } from "../src/lib/status.js";
 
@@ -77,4 +77,17 @@ test("data lama yang terlanjur melingkar tidak membuat loop tanpa akhir", async 
   await prisma.monitor.update({ where: { id: a.id }, data: { parent_id: b.id } });
   await beat(b.id, STATUS.UP);
   assert.equal(await blockingAncestor(a.id), null);
+});
+
+test("daftar monitor di-cache sampai dibuang oleh perubahan monitor", async () => {
+  const { server, app } = await chain();
+  await beat(server.id, STATUS.DOWN);
+  assert.ok(await blockingAncestor(app.id));
+
+  // Induk dilepas langsung di database: cache masih memegang rantai lama
+  await prisma.monitor.update({ where: { id: app.id }, data: { parent_id: null } });
+  assert.ok(await blockingAncestor(app.id));
+
+  invalidateDependencyCache();
+  assert.equal(await blockingAncestor(app.id), null);
 });

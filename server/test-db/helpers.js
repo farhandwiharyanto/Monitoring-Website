@@ -1,4 +1,5 @@
 import { prisma } from "../src/db.js";
+import { invalidateDependencyCache } from "../src/lib/dependency.js";
 
 // Tes di folder ini berjalan pada Postgres sungguhan dan MENGOSONGKAN seluruh
 // tabel sebelum tiap kasus. Karena itu database-nya dijaga: namanya wajib
@@ -24,6 +25,8 @@ export async function resetDb() {
   if (!tables.length) return;
   const list = tables.map((t) => `"${t.tablename}"`).join(", ");
   await prisma.$executeRawUnsafe(`TRUNCATE ${list} RESTART IDENTITY CASCADE`);
+  // Tes mengubah monitor langsung lewat Prisma, bukan lewat rute yang membuang cache
+  invalidateDependencyCache();
 }
 
 export const minutesAgo = (n, from = Date.now()) => new Date(from - n * 60_000);

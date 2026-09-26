@@ -1,5 +1,6 @@
 import { prisma } from "../db.js";
 import { newPushToken } from "../routes/push.js";
+import { invalidateDependencyCache } from "./dependency.js";
 
 // Backup & restore konfigurasi.
 //
@@ -228,6 +229,7 @@ export async function restoreBackup(payload) {
     if (induk) await prisma.monitor.update({ where: { id: anakId }, data: { parent_id: induk } });
     else hasil.peringatan.push(`Monitor induk "${namaInduk}" tidak ditemukan; anaknya dipulihkan tanpa dependency.`);
   }
+  invalidateDependencyCache();
 
   // --- Status page ---
   const pageSlug = new Set((await prisma.statusPage.findMany({ select: { slug: true } })).map((p) => p.slug));
