@@ -24,22 +24,20 @@ Terakhir diperbarui: 27 September 2026
 | 9 | Monitor database (PostgreSQL/MySQL/Redis), gRPC, dan Kafka | `4a2692a` `88b4c4e` `32d6994` |
 | 10 | Tes database (SLA, dependency, eskalasi) + perbaikan batas rentang SLA | `c642ca6` |
 | 10 | 2FA (TOTP) dengan kode cadangan & reset admin | `0401920` |
-| 10 | Eskalasi berulang, cache dependency, kontak on-call swalayan, cek visual, rate limit bersama | `e8f83b7` `c223b14` `39a200a` `9a38482` + commit ini |
+| 10 | Eskalasi berulang, cache dependency, kontak on-call swalayan, cek visual, rate limit bersama | `e8f83b7` `c223b14` `39a200a` `9a38482` `96ca0ad` |
+| 11 | Monitor Oracle & SQL Server, pengumpul metrik database, menu Database dengan temuan otomatis | `e9dd041` `68de902` `601e170` `63047ca` + commit ini |
 
 Polanya: tiap phase jadi dua commit — server dulu, lalu klien & dokumentasi.
 
 ## Belum dikerjakan
 
-- **Modul monitor & analitik database** (Oracle, SQL Server, metrik, menu
-  Database). Rinciannya di [rencana-database.md](rencana-database.md).
-
-Selain itu tidak ada pekerjaan terencana yang tersisa selain utang teknis di bawah. Kalau
+Tidak ada pekerjaan terencana yang tersisa selain utang teknis di bawah. Kalau
 menambah fitur baru, pertahankan urutan lama: fondasi (tes, CI) lebih dulu, lalu
 fitur, tipe monitor baru paling akhir.
 
 ### Menambah tipe monitor
 
-Monitor gRPC, Kafka, dan database (PostgreSQL/MySQL/Redis) sudah ada; lihat
+Monitor gRPC, Kafka, dan database (PostgreSQL/MySQL/Oracle/SQL Server/Redis) sudah ada; lihat
 [monitoring.md](monitoring.md). Target ujinya di `docker-compose.test.yml`.
 
 Catatan lama yang masih berlaku untuk tipe check berikutnya:
@@ -52,13 +50,18 @@ Sejak Phase 9, `conn_secret` (terenkripsi) dan `check_config` (JSON) sudah ada,
 jadi tipe check baru biasanya tidak perlu migration lagi.
 
 Biaya tersembunyi terbesarnya bukan menulis check-nya, melainkan target uji.
-`docker-compose.test.yml` sudah menyediakan Postgres, MySQL, Redis, dan Kafka —
+`docker-compose.test.yml` sudah menyediakan Postgres, MySQL, Oracle, SQL Server, Redis, dan Kafka —
 tambahkan service baru di sana, jangan menguji dengan tangan.
 
 **Berkas itu wajib punya `name` sendiri.** Tanpa itu Compose memakai nama
 direktori sebagai nama proyek, dan service bernama sama dengan yang ada di
 `docker-compose.yml` akan menggantikan container produksinya beserta volume
 datanya. Itu pernah terjadi sekali saat Phase 9 dikerjakan.
+
+Image Oracle (`gvenzl/oracle-free:slim`) dan SQL Server masing-masing ~1,5 GB;
+pastikan disk cukup sebelum menjalankannya. SQL Server hanya ada untuk amd64
+dan berjalan lewat Rosetta di Apple Silicon. Oracle butuh 1–2 menit sampai
+`DATABASE IS READY` muncul di log-nya.
 
 ## Utang teknis yang diketahui
 
@@ -69,7 +72,7 @@ datanya. Itu pernah terjadi sekali saat Phase 9 dikerjakan.
 ## Yang perlu dilakukan di instance yang sedang berjalan
 
 Container produksi yang dibangun sebelum Phase 8 **tidak otomatis ikut berubah**
-saat repo diperbarui. Untuk membawa seluruh pekerjaan Phase 8-10 ke sana:
+saat repo diperbarui. Untuk membawa seluruh pekerjaan Phase 8-11 ke sana:
 
 ```bash
 docker compose up -d --build
@@ -114,10 +117,10 @@ Login `admin` / `admin12345`, lalu ambil token dari `POST /api/auth/login`.
 Tes unit tidak butuh database sama sekali:
 
 ```bash
-cd server && npm test        # 97 tes, ~1 detik
+cd server && npm test        # 107 tes, ~1 detik
 ```
 
-Tes yang menyentuh database (`slaReport`, dependency, rantai eskalasi) ada di
+Tes yang menyentuh database (`slaReport`, dependency, rantai eskalasi, metrik) ada di
 `server/test-db/` dan butuh Postgres sungguhan yang sudah di-migrate. Tes itu
 **mengosongkan seluruh tabel**, jadi menolak berjalan kalau nama database-nya
 tidak mengandung `test`:
@@ -143,7 +146,7 @@ cd server && npx prisma migrate diff \
   --to-schema-datamodel prisma/schema.prisma --exit-code
 ```
 
-Membandingkan kelengkapan dua kamus i18n (saat ini 681 kunci):
+Membandingkan kelengkapan dua kamus i18n (saat ini 717 kunci):
 
 ```bash
 node scripts/check-i18n.mjs

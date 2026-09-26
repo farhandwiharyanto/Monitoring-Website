@@ -180,6 +180,41 @@ ikut ke export.
 
 Untuk mengujinya, ada `docker-compose.test.yml` di root repo.
 
+## Analitik database (menu Database)
+
+Monitor PostgreSQL, MySQL, Oracle, dan SQL Server juga membaca metrik di
+koneksi yang sama dengan check, **paling sering tiap 5 menit** dan hanya di
+lokasi primary. Metrik yang gagal dibaca tercatat "tidak tersedia" dan tidak
+pernah membuat monitor down. Disimpan `DB_METRICS_RETENTION_DAYS` hari
+(bawaan 30).
+
+Metriknya: koneksi terpakai/maks, ukuran database, cache hit, query per detik,
+query yang berjalan > 30 detik, lock menunggu, replication lag, versi, dan waktu
+start server. Query per detik dihitung dari selisih dua sampel; sampel sesudah
+server restart dilewati.
+
+Izin minimal user monitoring:
+
+| Database | Izin |
+|---|---|
+| PostgreSQL | `pg_monitor` |
+| MySQL | `PROCESS`, `REPLICATION CLIENT`, `SELECT` pada `performance_schema` |
+| Oracle | `SELECT_CATALOG_ROLE` |
+| SQL Server | `VIEW SERVER STATE` |
+
+Temuan otomatis:
+
+| Temuan | Artinya |
+|---|---|
+| Koneksi > 80% maks | Sebentar lagi koneksi baru ditolak; cek pool aplikasi atau naikkan batas |
+| Cache hit < 90% | Banyak baca ke disk; memori cache kurang atau ada query tanpa indeks |
+| Query > 30 detik | Ada query yang macet atau terlalu berat |
+| Lock menunggu | Ada sesi yang tertahan sesi lain; bisa berujung antrean panjang |
+| Replication lag > 60 detik | Replica tertinggal; data yang dibaca dari sana basi |
+| Ukuran naik > 20% dalam 7 hari | Pertumbuhan tak biasa; cek disk sebelum penuh |
+
+API: `GET /api/db-analytics` dan `GET /api/db-analytics/:monitorId?range=24h|7d|30d`.
+
 ## Monitor gRPC
 
 Memakai protokol health checking standar gRPC (`grpc.health.v1.Health/Check`),
